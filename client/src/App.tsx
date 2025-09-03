@@ -192,15 +192,15 @@ function AppRoutes() {
 }
 
 function App() {
-  const [showSplash, setShowSplash] = useState(true);
-
-  useEffect(() => {
-    // Always show splash screen on every page load
-    setShowSplash(true);
-  }, []);
+  const [showSplash, setShowSplash] = useState(() => {
+    // Only show splash on first visit, not on refreshes
+    const hasSeenSplash = sessionStorage.getItem('hasSeenSplash');
+    return !hasSeenSplash;
+  });
 
   const handleSplashContinue = () => {
     setShowSplash(false);
+    sessionStorage.setItem('hasSeenSplash', 'true');
   };
 
   if (showSplash) {
