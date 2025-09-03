@@ -151,7 +151,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -168,10 +168,10 @@ export default function LoginPage() {
           >
             <Flame className="h-8 w-8 text-white" />
           </motion.div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             {isSignUp ? "Create Account" : "Welcome Back"}
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             {isSignUp 
               ? "Sign up to get started with GasFlow" 
               : "Sign in to your GasFlow account"
@@ -180,21 +180,21 @@ export default function LoginPage() {
         </div>
 
         {/* Main Form Card */}
-        <Card className="border-0 shadow-xl bg-white/80 backdrop-blur">
+        <Card className="border-0 shadow-xl bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardContent className="p-8">
             {!isSignUp ? (
               /* LOGIN FORM */
               <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-6" data-testid="form-login">
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="login-email" className="text-sm font-medium text-gray-700">
+                    <Label htmlFor="login-email" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Email Address
                     </Label>
                     <Input
                       id="login-email"
                       type="email"
                       placeholder="Enter your email"
-                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                       {...loginForm.register("email")}
                       data-testid="input-login-email"
                     />
@@ -206,7 +206,7 @@ export default function LoginPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="login-password" className="text-sm font-medium text-gray-700">
+                    <Label htmlFor="login-password" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Password
                     </Label>
                     <div className="relative mt-1">
@@ -214,14 +214,14 @@ export default function LoginPage() {
                         id="login-password"
                         type={showPassword ? "text" : "password"}
                         placeholder="Enter your password"
-                        className="h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors pr-12"
+                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors pr-12"
                         {...loginForm.register("password")}
                         data-testid="input-login-password"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
@@ -332,7 +332,7 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
