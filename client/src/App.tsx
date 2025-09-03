@@ -29,6 +29,8 @@ import AdminAnalytics from "@/pages/admin/analytics";
 import AdminPOS from "@/pages/admin/pos";
 import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
+import TermsOfServicePage from "@/pages/terms-of-service";
+import PrivacyPolicyPage from "@/pages/privacy-policy";
 
 // Auth Guard Component
 function ProtectedRoute({ 
@@ -94,6 +96,15 @@ function AppRoutes() {
 
             <Route path="/verify-email">
               <EmailVerificationPage />
+            </Route>
+
+            {/* Legal Pages - Public Routes */}
+            <Route path="/terms-of-service">
+              <TermsOfServicePage />
+            </Route>
+
+            <Route path="/privacy-policy">
+              <PrivacyPolicyPage />
             </Route>
 
             {/* Root redirect */}

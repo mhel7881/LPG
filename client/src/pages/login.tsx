@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Flame, Loader2, Mail } from "lucide-react";
@@ -24,6 +25,12 @@ const registerSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   phone: z.string().optional(),
+  acceptTerms: z.boolean().refine((val) => val === true, {
+    message: "You must accept the Terms of Service to continue",
+  }),
+  acceptPrivacy: z.boolean().refine((val) => val === true, {
+    message: "You must accept the Privacy Policy to continue",
+  }),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -51,6 +58,8 @@ export default function LoginPage() {
       password: "",
       name: "",
       phone: "",
+      acceptTerms: false,
+      acceptPrivacy: false,
     },
   });
 
@@ -296,6 +305,65 @@ export default function LoginPage() {
                         {registerForm.formState.errors.password.message}
                       </p>
                     )}
+                  </div>
+
+                  {/* Terms and Privacy Agreement */}
+                  <div className="space-y-4 py-4 border-t">
+                    <div className="space-y-3">
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id="accept-terms"
+                          {...registerForm.register("acceptTerms")}
+                          data-testid="checkbox-accept-terms"
+                        />
+                        <Label
+                          htmlFor="accept-terms"
+                          className="text-sm leading-5 cursor-pointer"
+                        >
+                          I agree to the{" "}
+                          <Link
+                            href="/terms-of-service"
+                            className="text-primary hover:underline font-medium"
+                          >
+                            Terms of Service
+                          </Link>
+                        </Label>
+                      </div>
+                      {registerForm.formState.errors.acceptTerms && (
+                        <p className="text-sm text-destructive ml-6" data-testid="error-accept-terms">
+                          {registerForm.formState.errors.acceptTerms.message}
+                        </p>
+                      )}
+
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id="accept-privacy"
+                          {...registerForm.register("acceptPrivacy")}
+                          data-testid="checkbox-accept-privacy"
+                        />
+                        <Label
+                          htmlFor="accept-privacy"
+                          className="text-sm leading-5 cursor-pointer"
+                        >
+                          I agree to the{" "}
+                          <Link
+                            href="/privacy-policy"
+                            className="text-primary hover:underline font-medium"
+                          >
+                            Privacy Policy
+                          </Link>
+                        </Label>
+                      </div>
+                      {registerForm.formState.errors.acceptPrivacy && (
+                        <p className="text-sm text-destructive ml-6" data-testid="error-accept-privacy">
+                          {registerForm.formState.errors.acceptPrivacy.message}
+                        </p>
+                      )}
+
+                      <p className="text-xs text-muted-foreground mt-2">
+                        By creating an account, you confirm that you are at least 18 years old and agree to receive service updates and promotional communications. You can unsubscribe at any time.
+                      </p>
+                    </div>
                   </div>
 
                   <Button

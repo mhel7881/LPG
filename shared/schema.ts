@@ -14,6 +14,10 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationExpires: timestamp("email_verification_expires"),
+  termsAccepted: boolean("terms_accepted").default(false).notNull(),
+  privacyAccepted: boolean("privacy_accepted").default(false).notNull(),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  privacyAcceptedAt: timestamp("privacy_accepted_at"),
   createdAt: timestamp("created_at").default(sql`now()`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`now()`).notNull(),
 });
@@ -123,6 +127,8 @@ export const insertUserSchema = createInsertSchema(users).omit({
   emailVerified: true,
   emailVerificationToken: true,
   emailVerificationExpires: true,
+  termsAcceptedAt: true,
+  privacyAcceptedAt: true,
   createdAt: true,
   updatedAt: true,
 });

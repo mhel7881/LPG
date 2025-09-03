@@ -188,7 +188,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      const user = await storage.createUser(userData);
+      // Set acceptance timestamps if terms and privacy were accepted
+      const now = new Date();
+      const userDataWithTimestamps = {
+        ...userData,
+        termsAcceptedAt: userData.termsAccepted ? now : null,
+        privacyAcceptedAt: userData.privacyAccepted ? now : null,
+      };
+
+      const user = await storage.createUser(userDataWithTimestamps);
 
       // Generate email verification token
       const verificationToken = emailService.generateVerificationToken();
