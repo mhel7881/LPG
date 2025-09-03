@@ -1,4 +1,4 @@
-modules = ["nodejs-20"]
+modules = ["nodejs-20", "web"]
 [agent]
 expertMode = true
 
@@ -16,10 +16,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "GasFlow App"
+args = "Start application"
 
 [[workflows.workflow]]
-name = "GasFlow App"
+name = "Start application"
 author = "agent"
 
 [[workflows.workflow.tasks]]
@@ -36,5 +36,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["npm"]
+run = ["npm", "run", "start"]
 build = ["npm", "run", "build"]
