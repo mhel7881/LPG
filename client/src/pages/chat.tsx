@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -75,11 +76,29 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editedMessage, setEditedMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+  const [location] = useLocation();
+
   const { user } = useAuth();
   const { isConnected, sendMessage, lastMessage } = useWebSocket();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Parse query parameters
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const customerIdParam = urlParams.get('customerId');
+  const orderIdParam = urlParams.get('orderId');
+
+  // Set initial state from query parameters
+  useEffect(() => {
+    if (customerIdParam) {
+      setSelectedCustomerId(customerIdParam);
+      setActiveChat(customerIdParam);
+    }
+    if (orderIdParam) {
+      setSelectedOrderId(orderIdParam);
+      setActiveChat(orderIdParam);
+    }
+  }, [customerIdParam, orderIdParam]);
 
   // Fetch orders for context
   const { data: orders = [] } = useQuery({
@@ -291,23 +310,11 @@ export default function ChatPage() {
         messageData.receiverId = order.customerId;
       }
     } else if (user?.role === "customer") {
-      // Customer sending to admin - find admin user
-      // For now, we'll use a placeholder admin ID
-      messageData.receiverId = "admin";
+      // Customer sending to admin - the server will handle finding the admin user
+      // Don't set receiverId here, let the server handle it
     }
 
-    // Send via WebSocket for real-time delivery
-    if (isConnected) {
-      sendMessage({
-        type: "chat_message",
-        senderId: user?.id,
-        receiverId: messageData.receiverId,
-        orderId: messageData.orderId,
-        message: messageData.message,
-      });
-    }
-
-    // Also send via HTTP for persistence
+    // Send via HTTP API (WebSocket broadcasting is handled server-side)
     sendMessageMutation.mutate(messageData);
   };
 

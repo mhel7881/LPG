@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Flame, Loader2, Mail, Eye, EyeOff } from "lucide-react";
@@ -24,12 +23,6 @@ const registerSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   phone: z.string().optional(),
-  acceptTerms: z.boolean().refine((val) => val === true, {
-    message: "You must accept the Terms of Service to continue",
-  }),
-  acceptPrivacy: z.boolean().refine((val) => val === true, {
-    message: "You must accept the Privacy Policy to continue",
-  }),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -42,6 +35,7 @@ export default function LoginPage() {
   const [isResending, setIsResending] = useState(false);
   const [resendEmail, setResendEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showResendVerification, setShowResendVerification] = useState(false);
   const { login, register } = useAuth();
   const { toast } = useToast();
 
@@ -60,8 +54,6 @@ export default function LoginPage() {
       password: "",
       name: "",
       phone: "",
-      acceptTerms: false,
-      acceptPrivacy: false,
     },
   });
 
@@ -69,8 +61,13 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await login(data.email, data.password);
-    } catch (error) {
-      // Error handling is done in the login function
+      setShowResendVerification(false);
+    } catch (error: any) {
+      // If email verification is required, show resend option
+      if (error.message?.includes('verification') || error.message?.includes('verified')) {
+        setResendEmail(data.email);
+        setShowResendVerification(true);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -84,8 +81,6 @@ export default function LoginPage() {
         password: data.password,
         name: data.name,
         phone: data.phone,
-        acceptTerms: data.acceptTerms,
-        acceptPrivacy: data.acceptPrivacy,
       });
 
       // Registration successful, switch back to login
@@ -246,18 +241,14 @@ export default function LoginPage() {
 
                 {/* Forgot Password */}
                 <div className="text-center">
-                  <button
-                    type="button"
-                    className="text-sm text-orange-600 hover:text-orange-700 font-medium"
-                    onClick={() => {
-                      toast({
-                        title: "Password Reset",
-                        description: "Contact support for password reset assistance.",
-                      });
-                    }}
-                  >
-                    Forgot your password?
-                  </button>
+                  <Link href="/forgot-password">
+                    <button
+                      type="button"
+                      className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+                    >
+                      Forgot your password?
+                    </button>
+                  </Link>
                 </div>
               </form>
             ) : (
@@ -320,23 +311,14 @@ export default function LoginPage() {
                     <Label htmlFor="register-password" className="text-sm font-medium text-gray-700">
                       Password
                     </Label>
-                    <div className="relative mt-1">
-                      <Input
-                        id="register-password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Create a strong password"
-                        className="h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors pr-12"
-                        {...registerForm.register("password")}
-                        data-testid="input-register-password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                      >
-                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
-                    </div>
+                    <Input
+                      id="register-password"
+                      type="password"
+                      placeholder="Create a strong password"
+                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      {...registerForm.register("password")}
+                      data-testid="input-register-password"
+                    />
                     {registerForm.formState.errors.password && (
                       <p className="text-sm text-red-600 mt-1" data-testid="error-register-password">
                         {registerForm.formState.errors.password.message}
@@ -345,66 +327,6 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {/* Terms and Privacy Agreement */}
-                <div className="space-y-4 pt-2 border-t border-gray-100">
-                  <div className="space-y-3">
-                    <div className="flex items-start space-x-3">
-                      <Checkbox
-                        id="accept-terms"
-                        {...registerForm.register("acceptTerms")}
-                        data-testid="checkbox-accept-terms"
-                        className="mt-0.5"
-                      />
-                      <Label
-                        htmlFor="accept-terms"
-                        className="text-sm leading-5 cursor-pointer text-gray-700"
-                      >
-                        I agree to the{" "}
-                        <Link
-                          href="/terms-of-service"
-                          className="text-orange-600 hover:text-orange-700 font-medium underline"
-                        >
-                          Terms of Service
-                        </Link>
-                      </Label>
-                    </div>
-                    {registerForm.formState.errors.acceptTerms && (
-                      <p className="text-sm text-red-600 ml-6" data-testid="error-accept-terms">
-                        {registerForm.formState.errors.acceptTerms.message}
-                      </p>
-                    )}
-
-                    <div className="flex items-start space-x-3">
-                      <Checkbox
-                        id="accept-privacy"
-                        {...registerForm.register("acceptPrivacy")}
-                        data-testid="checkbox-accept-privacy"
-                        className="mt-0.5"
-                      />
-                      <Label
-                        htmlFor="accept-privacy"
-                        className="text-sm leading-5 cursor-pointer text-gray-700"
-                      >
-                        I agree to the{" "}
-                        <Link
-                          href="/privacy-policy"
-                          className="text-orange-600 hover:text-orange-700 font-medium underline"
-                        >
-                          Privacy Policy
-                        </Link>
-                      </Label>
-                    </div>
-                    {registerForm.formState.errors.acceptPrivacy && (
-                      <p className="text-sm text-red-600 ml-6" data-testid="error-accept-privacy">
-                        {registerForm.formState.errors.acceptPrivacy.message}
-                      </p>
-                    )}
-
-                    <p className="text-xs text-gray-500 mt-2">
-                      By creating an account, you confirm that you are at least 18 years old.
-                    </p>
-                  </div>
-                </div>
 
                 <Button
                   type="submit"
@@ -421,7 +343,7 @@ export default function LoginPage() {
         </Card>
 
         {/* Email Verification Resend */}
-        {resendEmail && (
+        {showResendVerification && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -431,27 +353,45 @@ export default function LoginPage() {
               <CardContent className="p-6">
                 <div className="flex items-center space-x-3 mb-4">
                   <Mail className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-semibold text-blue-900">Email Verification</h3>
+                  <h3 className="font-semibold text-blue-900">Email Verification Required</h3>
                 </div>
                 <p className="text-blue-800 mb-4">
-                  Didn't receive the verification email? We can send it again.
+                  Your email address needs to be verified before you can log in. Didn't receive the verification email? We can send it again.
                 </p>
-                <div className="flex space-x-3">
-                  <Button
-                    onClick={handleResendVerification}
-                    disabled={isResending}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  >
-                    {isResending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Resend Email
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setResendEmail("")}
-                    className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                  >
-                    Cancel
-                  </Button>
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="resend-email" className="text-sm font-medium text-blue-900">
+                      Email Address
+                    </Label>
+                    <Input
+                      id="resend-email"
+                      type="email"
+                      placeholder="Enter your email address"
+                      value={resendEmail}
+                      onChange={(e) => setResendEmail(e.target.value)}
+                      className="mt-1 bg-white border-blue-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex space-x-3">
+                    <Button
+                      onClick={handleResendVerification}
+                      disabled={isResending || !resendEmail}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    >
+                      {isResending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Resend Verification Email
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowResendVerification(false);
+                        setResendEmail("");
+                      }}
+                      className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

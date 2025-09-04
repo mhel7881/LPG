@@ -1,16 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { getAuthHeaders } from "@/lib/auth";
 import { generateReceiptPDF, type ReceiptData } from "@/lib/receipt-generator";
-import { 
-  Package, 
-  MapPin, 
-  MessageSquare, 
-  Download, 
+import {
+  Package,
+  MapPin,
+  MessageSquare,
+  Download,
   RefreshCcw,
   Clock,
   CheckCircle,
@@ -39,6 +40,7 @@ interface Order {
 }
 
 export default function CustomerOrders() {
+  const [, setLocation] = useLocation();
   const { data: orders = [], isLoading, refetch } = useQuery({
     queryKey: ["/api/orders"],
     queryFn: async () => {
@@ -228,7 +230,13 @@ export default function CustomerOrders() {
                                 <MapPin className="h-4 w-4 mr-2" />
                                 Track Order
                               </Button>
-                              <Button variant="outline" size="sm" className="flex-1" data-testid={`button-chat-${order.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setLocation(`/chat?orderId=${order.id}`)}
+                                data-testid={`button-chat-${order.id}`}
+                              >
                                 <MessageSquare className="h-4 w-4 mr-2" />
                                 Chat Support
                               </Button>

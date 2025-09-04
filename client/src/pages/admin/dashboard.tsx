@@ -54,7 +54,7 @@ interface Order {
 }
 
 export default function AdminDashboard() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ["/api/analytics/dashboard"],
     queryFn: async () => {
       const response = await fetch("/api/analytics/dashboard", {
@@ -63,9 +63,10 @@ export default function AdminDashboard() {
       if (!response.ok) throw new Error("Failed to fetch dashboard stats");
       return response.json();
     },
+    retry: false,
   });
 
-  const { data: orders = [], isLoading: ordersLoading } = useQuery({
+  const { data: orders = [], isLoading: ordersLoading, error: ordersError } = useQuery({
     queryKey: ["/api/orders"],
     queryFn: async () => {
       const response = await fetch("/api/orders", {
@@ -74,55 +75,56 @@ export default function AdminDashboard() {
       if (!response.ok) throw new Error("Failed to fetch orders");
       return response.json();
     },
+    retry: false,
   });
 
-  const { data: products = [] } = useQuery({
+  const { data: products = [], error: productsError } = useQuery({
     queryKey: ["/api/products"],
     queryFn: async () => {
       const response = await fetch("/api/products");
       if (!response.ok) throw new Error("Failed to fetch products");
       return response.json();
     },
+    retry: false,
   });
 
   const recentOrders = orders.slice(0, 5);
   const lowStockProducts = products.filter((product: any) => product.stock <= 5);
 
-  // Calculate analytics data
-  const salesData = orders.reduce((acc: any[], order: Order) => {
-    const date = new Date(order.createdAt).toLocaleDateString();
-    const existingEntry = acc.find(entry => entry.date === date);
-    
-    if (existingEntry) {
-      existingEntry.sales += parseFloat(order.totalAmount);
-      existingEntry.orders += 1;
-    } else {
-      acc.push({
-        date,
-        sales: parseFloat(order.totalAmount),
-        orders: 1,
-      });
+  // Calculate analytics data with error handling
+  const salesData = orders?.reduce((acc: any[], order: Order) => {
+    try {
+      const date = new Date(order.createdAt).toLocaleDateString();
+      const existingEntry = acc.find(entry => entry.date === date);
+
+      if (existingEntry) {
+        existingEntry.sales += parseFloat(order.totalAmount);
+        existingEntry.orders += 1;
+      } else {
+        acc.push({
+          date,
+          sales: parseFloat(order.totalAmount),
+          orders: 1,
+        });
+      }
+      return acc;
+    } catch (error) {
+      console.error('Error processing order for sales data:', error);
+      return acc;
     }
-    return acc;
-  }, []).slice(-7); // Last 7 days
+  }, []).slice(-7) || []; // Last 7 days
 
-  const ordersByStatus = orders.reduce((acc: any, order: Order) => {
-    acc[order.status] = (acc[order.status] || 0) + 1;
-    return acc;
-  }, {});
+  const ordersByStatus = orders?.reduce((acc: any, order: Order) => {
+    try {
+      acc[order.status] = (acc[order.status] || 0) + 1;
+      return acc;
+    } catch (error) {
+      console.error('Error processing order status:', error);
+      return acc;
+    }
+  }, {}) || {};
 
-  const statusChartData = Object.entries(ordersByStatus).map(([status, count]) => ({
-    name: formatStatus(status),
-    value: count,
-    fill: getStatusChartColor(status)
-  }));
-
-  const productSales = products.map((product: any) => ({
-    name: product.name,
-    stock: product.stock,
-    sold: orders.filter((order: Order) => order.productId === product.id).length,
-  }));
-
+  // Helper functions defined before use
   function getStatusChartColor(status: string) {
     switch (status) {
       case "pending": return "#f59e0b";
@@ -145,10 +147,50 @@ export default function AdminDashboard() {
   };
 
   const formatStatus = (status: string) => {
-    return status.split('_').map(word => 
+    return status.split('_').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
   };
+
+  const statusChartData = Object.entries(ordersByStatus).map(([status, count]) => ({
+    name: formatStatus(status),
+    value: count,
+    fill: getStatusChartColor(status)
+  }));
+
+  const productSales = products?.map((product: any) => ({
+    name: product.name,
+    stock: product.stock,
+    sold: orders?.filter((order: Order) => order.productId === product.id).length || 0,
+  })) || [];
+
+  // Show error messages if API calls fail
+  if (statsError || ordersError || productsError) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="max-w-2xl mx-auto">
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+                <h2 className="text-lg font-semibold text-red-800">Dashboard Error</h2>
+              </div>
+              <div className="space-y-2 text-sm text-red-700">
+                {statsError && <p>• Stats API Error: {statsError.message}</p>}
+                {ordersError && <p>• Orders API Error: {ordersError.message}</p>}
+                {productsError && <p>• Products API Error: {productsError.message}</p>}
+              </div>
+              <div className="mt-4">
+                <p className="text-sm text-red-600">
+                  This is likely due to database connection issues. Please ensure your database is properly configured and running.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-8 pb-20 md:pb-6">
@@ -157,15 +199,15 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           <p className="text-muted-foreground">
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
             })}
           </p>
         </div>
-        
+
         {lowStockProducts.length > 0 && (
           <Link href="/admin/inventory" data-testid="link-low-stock-alert">
             <Button variant="outline" className="bg-red-50 border-red-200 text-red-700 hover:bg-red-100 pulse-glow">
@@ -363,21 +405,30 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={salesData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Area 
-                    type="monotone" 
-                    dataKey="sales" 
-                    stroke="#8884d8" 
-                    fill="#8884d8" 
-                    fillOpacity={0.6}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {salesData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={salesData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Area
+                      type="monotone"
+                      dataKey="sales"
+                      stroke="#8884d8"
+                      fill="#8884d8"
+                      fillOpacity={0.6}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="text-center">
+                    <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No sales data available</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -390,25 +441,34 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={statusChartData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {statusChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {statusChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={statusChartData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {statusChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="text-center">
+                    <Target className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No order data available</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -421,17 +481,26 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={productSales}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="sold" fill="#8884d8" name="Units Sold" />
-                  <Bar dataKey="stock" fill="#82ca9d" name="Stock Remaining" />
-                </BarChart>
-              </ResponsiveContainer>
+              {productSales.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={productSales}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="sold" fill="#8884d8" name="Units Sold" />
+                    <Bar dataKey="stock" fill="#82ca9d" name="Stock Remaining" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="text-center">
+                    <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No product data available</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

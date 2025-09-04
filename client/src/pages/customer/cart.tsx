@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
@@ -11,15 +11,18 @@ import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Minus, 
-  Plus, 
-  Trash2, 
-  Package, 
+import {
+  Minus,
+  Plus,
+  Trash2,
+  Package,
   ShoppingCart,
   CreditCard,
   MapPin,
-  ArrowLeft
+  ArrowLeft,
+  CheckSquare,
+  Square,
+  Loader2
 } from "lucide-react";
 
 interface CartItem {
@@ -51,7 +54,9 @@ export default function CustomerCart() {
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [notes, setNotes] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [processingItems, setProcessingItems] = useState<Set<string>>(new Set());
+
   const { items, updateItem, removeItem, clearCart } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -85,25 +90,107 @@ export default function CustomerCart() {
     };
   });
 
+  // Clean up selected items that no longer exist in cart
+  useEffect(() => {
+    const currentItemIds = new Set(enrichedItems.map(item => item.id));
+    setSelectedItems(prev => {
+      const cleanedSet = new Set<string>();
+      prev.forEach(itemId => {
+        if (currentItemIds.has(itemId)) {
+          cleanedSet.add(itemId);
+        }
+      });
+      return cleanedSet;
+    });
+  }, [enrichedItems]);
+
   const cartTotal = enrichedItems.reduce((total, item) => {
     if (!item.product) return total;
     const price = item.type === "new" ? parseFloat(item.product.newPrice) : parseFloat(item.product.swapPrice);
     return total + (price * item.quantity);
   }, 0);
 
-  const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      await removeItem(itemId);
+  const selectedItemsTotal = enrichedItems
+    .filter(item => selectedItems.has(item.id))
+    .reduce((total, item) => {
+      if (!item.product) return total;
+      const price = item.type === "new" ? parseFloat(item.product.newPrice) : parseFloat(item.product.swapPrice);
+      return total + (price * item.quantity);
+    }, 0);
+
+  const handleSelectItem = (itemId: string) => {
+    // Prevent selection changes when item is being processed
+    if (processingItems.has(itemId)) {
+      return;
+    }
+
+    // Ensure we're working with a valid item ID
+    const itemExists = enrichedItems.some(item => item.id === itemId);
+    if (!itemExists) {
+      console.warn(`Attempted to select non-existent item: ${itemId}`);
+      return;
+    }
+
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+
+  const handleSelectAll = () => {
+    // Don't allow select all if any items are being processed
+    if (processingItems.size > 0) {
+      return;
+    }
+
+    if (selectedItems.size === enrichedItems.length) {
+      setSelectedItems(new Set());
     } else {
-      await updateItem(itemId, newQuantity);
+      setSelectedItems(new Set(enrichedItems.map(item => item.id)));
+    }
+  };
+
+  const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
+    // Prevent multiple simultaneous operations on the same item
+    if (processingItems.has(itemId)) {
+      return;
+    }
+
+    setProcessingItems(prev => new Set(prev).add(itemId));
+
+    try {
+      if (newQuantity <= 0) {
+        setSelectedItems(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(itemId);
+          return newSet;
+        });
+        await removeItem(itemId);
+      } else {
+        await updateItem(itemId, newQuantity);
+      }
+    } finally {
+      setProcessingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(itemId);
+        return newSet;
+      });
     }
   };
 
   const handlePlaceOrder = async () => {
-    if (enrichedItems.length === 0) {
+    const itemsToOrder = enrichedItems.filter(item => selectedItems.has(item.id));
+
+    if (itemsToOrder.length === 0) {
       toast({
-        title: "Empty Cart",
-        description: "Please add items to your cart before placing an order.",
+        title: "No Items Selected",
+        description: "Please select items to checkout.",
         variant: "destructive",
       });
       return;
@@ -119,13 +206,12 @@ export default function CustomerCart() {
     }
 
     setIsPlacingOrder(true);
-    
+
     try {
-      // For this demo, we'll place orders one by one
-      // In a real implementation, you might want to support multiple items per order
-      for (const item of enrichedItems) {
+      // Place orders for selected items one by one
+      for (const item of itemsToOrder) {
         if (!item.product) continue;
-        
+
         const unitPrice = item.type === "new" ? item.product.newPrice : item.product.swapPrice;
         const totalAmount = parseFloat(unitPrice) * item.quantity;
 
@@ -149,11 +235,16 @@ export default function CustomerCart() {
         }
       }
 
-      await clearCart();
-      
+      // Remove ordered items from cart
+      for (const item of itemsToOrder) {
+        await removeItem(item.id);
+      }
+
+      setSelectedItems(new Set());
+
       toast({
         title: "Order Placed!",
-        description: "Your order has been placed successfully. You'll receive updates soon.",
+        description: `Your order for ${itemsToOrder.length} item(s) has been placed successfully.`,
       });
 
       // Redirect to orders page
@@ -190,6 +281,11 @@ export default function CustomerCart() {
           <h1 className="text-2xl font-bold">Shopping Cart</h1>
           <p className="text-muted-foreground" data-testid="text-cart-item-count">
             {enrichedItems.length} {enrichedItems.length === 1 ? "item" : "items"}
+            {selectedItems.size > 0 && (
+              <span className="ml-2 text-primary">
+                • {selectedItems.size} selected
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -216,7 +312,28 @@ export default function CustomerCart() {
           <div className="lg:col-span-2 space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Cart Items</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Cart Items</CardTitle>
+                  {enrichedItems.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectAll();
+                      }}
+                      disabled={processingItems.size > 0}
+                      className="text-sm"
+                    >
+                      {selectedItems.size === enrichedItems.length ? (
+                        <CheckSquare className="h-4 w-4 mr-2" />
+                      ) : (
+                        <Square className="h-4 w-4 mr-2" />
+                      )}
+                      {selectedItems.size === enrichedItems.length ? "Deselect All" : "Select All"}
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {enrichedItems.map((item, index) => (
@@ -225,16 +342,41 @@ export default function CustomerCart() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
-                    className="flex items-center space-x-4 p-4 border rounded-lg"
+                    className={`flex items-center space-x-4 p-4 border rounded-lg transition-opacity cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                      selectedItems.has(item.id) ? "border-primary bg-primary/5" : ""
+                    } ${processingItems.has(item.id) ? "opacity-60" : ""}`}
+                    onClick={() => handleSelectItem(item.id)}
                   >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent event bubbling
+                        handleSelectItem(item.id);
+                      }}
+                      disabled={processingItems.has(item.id)}
+                      className="p-0 h-6 w-6"
+                    >
+                      {selectedItems.has(item.id) ? (
+                        <CheckSquare className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Square className="h-4 w-4" />
+                      )}
+                    </Button>
+
                     <div className="w-16 h-16 bg-primary/10 rounded-lg flex items-center justify-center">
                       <Package className="h-8 w-8 text-primary" />
                     </div>
-                    
+
                     <div className="flex-1">
-                      <h3 className="font-medium" data-testid={`text-cart-item-name-${item.id}`}>
-                        {item.product?.name || "Unknown Product"}
-                      </h3>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="font-medium" data-testid={`text-cart-item-name-${item.id}`}>
+                          {item.product?.name || "Unknown Product"}
+                        </h3>
+                        {processingItems.has(item.id) && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {item.type === "new" ? "New Tank" : "Tank Swap"} • {item.product?.weight}
                       </p>
@@ -242,12 +384,16 @@ export default function CustomerCart() {
                         ₱{item.type === "new" ? item.product?.newPrice : item.product?.swapPrice}
                       </p>
                     </div>
-                    
-                    <div className="flex items-center space-x-2">
+
+                    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateQuantity(item.id, item.quantity - 1);
+                        }}
+                        disabled={processingItems.has(item.id)}
                         data-testid={`button-decrease-quantity-${item.id}`}
                       >
                         <Minus className="h-4 w-4" />
@@ -258,7 +404,11 @@ export default function CustomerCart() {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateQuantity(item.id, item.quantity + 1);
+                        }}
+                        disabled={processingItems.has(item.id)}
                         data-testid={`button-increase-quantity-${item.id}`}
                       >
                         <Plus className="h-4 w-4" />
@@ -266,7 +416,31 @@ export default function CustomerCart() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => removeItem(item.id)}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          // Prevent multiple simultaneous operations on the same item
+                          if (processingItems.has(item.id)) {
+                            return;
+                          }
+
+                          setProcessingItems(prev => new Set(prev).add(item.id));
+
+                          try {
+                            setSelectedItems(prev => {
+                              const newSet = new Set(prev);
+                              newSet.delete(item.id);
+                              return newSet;
+                            });
+                            await removeItem(item.id);
+                          } finally {
+                            setProcessingItems(prev => {
+                              const newSet = new Set(prev);
+                              newSet.delete(item.id);
+                              return newSet;
+                            });
+                          }
+                        }}
+                        disabled={processingItems.has(item.id)}
                         className="text-destructive hover:text-destructive"
                         data-testid={`button-remove-item-${item.id}`}
                       >
@@ -275,12 +449,27 @@ export default function CustomerCart() {
                     </div>
                   </motion.div>
                 ))}
-                
+
                 <div className="flex justify-between items-center pt-4 border-t">
-                  <Button variant="ghost" onClick={clearCart} data-testid="button-clear-cart">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Clear Cart
-                  </Button>
+                  <div className="flex items-center space-x-4">
+                    <Button
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearCart();
+                        setSelectedItems(new Set());
+                      }}
+                      data-testid="button-clear-cart"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Clear Cart
+                    </Button>
+                    {selectedItems.size > 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        {selectedItems.size} item(s) selected
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xl font-bold" data-testid="text-cart-total">
                     Total: ₱{cartTotal.toFixed(2)}
                   </div>
@@ -372,8 +561,12 @@ export default function CustomerCart() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex justify-between">
+                  <span>Selected Items:</span>
+                  <span data-testid="text-selected-count">{selectedItems.size} item(s)</span>
+                </div>
+                <div className="flex justify-between">
                   <span>Subtotal:</span>
-                  <span data-testid="text-subtotal">₱{cartTotal.toFixed(2)}</span>
+                  <span data-testid="text-subtotal">₱{selectedItemsTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Delivery Fee:</span>
@@ -381,16 +574,16 @@ export default function CustomerCart() {
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>Total:</span>
-                  <span data-testid="text-order-total">₱{cartTotal.toFixed(2)}</span>
+                  <span data-testid="text-order-total">₱{selectedItemsTotal.toFixed(2)}</span>
                 </div>
-                
+
                 <Button
                   className="w-full mt-4"
                   onClick={handlePlaceOrder}
-                  disabled={isPlacingOrder || !selectedAddressId}
+                  disabled={isPlacingOrder || !selectedAddressId || selectedItems.size === 0}
                   data-testid="button-place-order"
                 >
-                  {isPlacingOrder ? "Placing Order..." : "Place Order"}
+                  {isPlacingOrder ? "Placing Order..." : `Place Order (${selectedItems.size} item${selectedItems.size !== 1 ? 's' : ''})`}
                 </Button>
               </CardContent>
             </Card>

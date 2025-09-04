@@ -85,22 +85,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         if (message.type === 'chat_message') {
-          const chatMessage = await storage.createChatMessage({
-            senderId: message.senderId,
-            receiverId: message.receiverId,
-            orderId: message.orderId,
-            message: message.message,
-            type: 'text',
-          });
-
-          // Send to receiver if online
-          const receiverWs = clients.get(message.receiverId);
-          if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
-            receiverWs.send(JSON.stringify({
-              type: 'new_message',
-              message: chatMessage,
-            }));
-          }
+          // WebSocket messages are now handled by HTTP API
+          // This prevents duplicate message creation
+          // Real-time broadcasting is done in the HTTP endpoint
         }
 
         if (message.type === 'order_update') {
@@ -188,15 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Set acceptance timestamps if terms and privacy were accepted
-      const now = new Date();
-      const userDataWithTimestamps = {
-        ...userData,
-        termsAcceptedAt: userData.termsAccepted ? now : null,
-        privacyAcceptedAt: userData.privacyAccepted ? now : null,
-      };
-
-      const user = await storage.createUser(userDataWithTimestamps);
+      const user = await storage.createUser(userData);
 
       // Generate email verification token
       const verificationToken = emailService.generateVerificationToken();
@@ -342,6 +321,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Password change error:', error);
       res.status(500).json({ message: 'Failed to change password' });
+    }
+  });
+
+  // Request password reset
+  app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: 'Email is required' });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Don't reveal if user exists or not for security
+        return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+      }
+
+      // Generate password reset token
+      const resetToken = emailService.generatePasswordResetToken();
+      const tokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Set password reset token
+      await storage.setPasswordResetToken(user.id, resetToken, tokenExpires);
+
+      // Send password reset email
+      try {
+        await emailService.sendPasswordResetEmail(user.email, resetToken);
+        res.json({ message: 'Password reset email sent successfully' });
+      } catch (emailError) {
+        console.error('Failed to send password reset email:', emailError);
+        res.status(500).json({ message: 'Failed to send password reset email' });
+      }
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to process password reset request' });
+    }
+  });
+
+  // Reset password with token
+  app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: 'Token and new password are required' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+      }
+
+      const user = await storage.getUserByPasswordResetToken(token);
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid or expired reset token' });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password and clear reset token
+      const updatedUser = await storage.updateUser(user.id, {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null
+      } as any);
+
+      res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to reset password' });
     }
   });
 
@@ -638,16 +686,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         senderId: req.user.id,
       };
-      
+
       // If customer is sending message without specific receiver, default to admin
       if (req.user.role === 'customer' && !messageData.receiverId) {
         const adminUser = await storage.getUserByEmail('admin@gasflow.com');
         if (adminUser) {
           messageData.receiverId = adminUser.id;
+        } else {
+          // If admin user doesn't exist, create a fallback admin user
+          try {
+            const fallbackAdmin = await storage.createUser({
+              email: 'admin@gasflow.com',
+              password: 'admin123',
+              name: 'Admin User',
+              role: 'admin',
+              phone: '+63 912 345 6789',
+            });
+            await storage.updateUserEmailVerification(fallbackAdmin.id, true);
+            messageData.receiverId = fallbackAdmin.id;
+          } catch (error) {
+            console.error('Failed to create fallback admin user:', error);
+            return res.status(500).json({ message: 'Unable to send message - admin user not available' });
+          }
         }
       }
-      
+
       const message = await storage.createChatMessage(messageData);
+
+      // Broadcast message via WebSocket to receiver
+      if (messageData.receiverId) {
+        const receiverWs = clients.get(messageData.receiverId);
+        if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
+          receiverWs.send(JSON.stringify({
+            type: 'new_message',
+            message: message,
+          }));
+        }
+      }
+
       res.status(201).json(message);
     } catch (error) {
       res.status(400).json({ message: 'Failed to create message' });

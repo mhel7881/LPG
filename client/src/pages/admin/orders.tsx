@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ export default function AdminOrders() {
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ["/api/orders"],
@@ -132,6 +134,16 @@ export default function AdminOrders() {
 
   const handleStatusUpdate = (orderId: string, newStatus: string) => {
     updateOrderStatusMutation.mutate({ orderId, status: newStatus });
+  };
+
+  const handleViewLocation = (orderId: string) => {
+    // Navigate to location tracking page with the specific order
+    setLocation(`/admin/location-tracking?orderId=${orderId}`);
+  };
+
+  const handleChatWithCustomer = (orderId: string, customerId: string) => {
+    // Navigate to chat page with the specific customer
+    setLocation(`/chat?customerId=${customerId}&orderId=${orderId}`);
   };
 
   const orderCounts = {
@@ -297,18 +309,20 @@ export default function AdminOrders() {
                           </Button>
                         )}
                         
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
+                          onClick={() => handleViewLocation(order.id)}
                           data-testid={`button-view-location-${order.id}`}
                         >
                           <MapPin className="h-4 w-4 mr-2" />
                           View Location
                         </Button>
-                        
-                        <Button 
-                          variant="outline" 
+
+                        <Button
+                          variant="outline"
                           size="sm"
+                          onClick={() => handleChatWithCustomer(order.id, order.customerId)}
                           data-testid={`button-chat-customer-${order.id}`}
                         >
                           <MessageSquare className="h-4 w-4 mr-2" />

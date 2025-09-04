@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import Map from "@/components/map";
-import { 
-  Search, 
-  MapPin, 
-  Navigation, 
+import {
+  Search,
+  MapPin,
+  Navigation,
   RefreshCw,
   Users,
   Truck,
@@ -57,7 +58,12 @@ export default function AdminLocationTracking() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"customers" | "orders">("orders");
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [location] = useLocation();
   const { toast } = useToast();
+
+  // Parse query parameters
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const orderIdParam = urlParams.get('orderId');
 
   // Fetch customer addresses with GPS coordinates
   const { data: addresses = [], isLoading: addressesLoading, refetch: refetchAddresses } = useQuery({
@@ -92,14 +98,17 @@ export default function AdminLocationTracking() {
      addr.street.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Filter orders
-  const filteredOrders = orders.filter((order: Order) => 
-    (statusFilter === "all" || order.status === statusFilter) &&
-    order.address?.coordinates &&
-    (searchTerm === "" || 
-     order.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filter orders - if orderId is provided, show only that order
+  const filteredOrders = orders.filter((order: Order) => {
+    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+    const hasCoordinates = order.address?.coordinates;
+    const matchesSearch = searchTerm === "" ||
+      order.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesOrderId = !orderIdParam || order.id === orderIdParam;
+
+    return matchesStatus && hasCoordinates && matchesSearch && matchesOrderId;
+  });
 
   const handleRefresh = async () => {
     await Promise.all([refetchAddresses(), refetchOrders()]);

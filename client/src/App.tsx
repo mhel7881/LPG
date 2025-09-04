@@ -15,6 +15,8 @@ import SplashScreen from "@/components/splash-screen";
 
 // Pages
 import LoginPage from "@/pages/login";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import EmailVerificationPage from "@/pages/email-verification";
 import CustomerDashboard from "@/pages/customer/dashboard";
 import CustomerProducts from "@/pages/customer/products";
@@ -91,6 +93,18 @@ function AppRoutes() {
             <Route path="/login">
               <PublicRoute>
                 <LoginPage />
+              </PublicRoute>
+            </Route>
+
+            <Route path="/forgot-password">
+              <PublicRoute>
+                <ForgotPasswordPage />
+              </PublicRoute>
+            </Route>
+
+            <Route path="/reset-password">
+              <PublicRoute>
+                <ResetPasswordPage />
               </PublicRoute>
             </Route>
 

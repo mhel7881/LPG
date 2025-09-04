@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 // server/storage.ts
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq, desc, and, or, count, sum, gt } from "drizzle-orm";
+import { eq, desc, and, or, count, sum, sql as drizzleSql, gt } from "drizzle-orm";
 
 // shared/schema.ts
 import { sql } from "drizzle-orm";
@@ -30,6 +30,10 @@ var users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationExpires: timestamp("email_verification_expires"),
+  termsAccepted: boolean("terms_accepted").default(false).notNull(),
+  privacyAccepted: boolean("privacy_accepted").default(false).notNull(),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  privacyAcceptedAt: timestamp("privacy_accepted_at"),
   createdAt: timestamp("created_at").default(sql`now()`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`now()`).notNull()
 });
@@ -145,6 +149,8 @@ var insertUserSchema = createInsertSchema(users).omit({
   emailVerified: true,
   emailVerificationToken: true,
   emailVerificationExpires: true,
+  termsAcceptedAt: true,
+  privacyAcceptedAt: true,
   createdAt: true,
   updatedAt: true
 });
@@ -416,9 +422,87 @@ var DrizzleStorage = class {
     )).returning();
     return result.length > 0;
   }
+  async unsendChatMessage(messageId, userId) {
+    const result = await db.delete(chatMessages).where(and(
+      eq(chatMessages.id, messageId),
+      eq(chatMessages.senderId, userId)
+      // Only sender can unsend their own messages
+    )).returning();
+    return result.length > 0;
+  }
   async markMessagesAsRead(userId) {
     const result = await db.update(chatMessages).set({ isRead: true }).where(eq(chatMessages.receiverId, userId)).returning();
     return result.length > 0;
+  }
+  // Get list of customers who have sent messages to admin
+  async getChatCustomers() {
+    const latestMessages = await db.select({
+      customerId: chatMessages.senderId,
+      maxTime: drizzleSql`max(${chatMessages.createdAt})`.as("max_time")
+    }).from(chatMessages).innerJoin(users, eq(chatMessages.senderId, users.id)).where(and(
+      eq(users.role, "customer"),
+      eq(chatMessages.isDeleted, false)
+    )).groupBy(chatMessages.senderId);
+    const result = [];
+    for (const item of latestMessages) {
+      const customerMessages = await db.select({
+        customerId: chatMessages.senderId,
+        customer: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          avatar: users.avatar
+        },
+        lastMessage: chatMessages.message,
+        lastMessageTime: chatMessages.createdAt
+      }).from(chatMessages).innerJoin(users, eq(chatMessages.senderId, users.id)).where(and(
+        eq(chatMessages.senderId, item.customerId),
+        drizzleSql`${chatMessages.createdAt} = ${item.maxTime}::timestamp`,
+        eq(chatMessages.isDeleted, false)
+      )).limit(1);
+      if (customerMessages.length > 0) {
+        const unreadCount = await db.select({
+          count: drizzleSql`count(*)`.as("count")
+        }).from(chatMessages).where(and(
+          eq(chatMessages.senderId, item.customerId),
+          eq(chatMessages.isRead, false),
+          eq(chatMessages.isDeleted, false)
+        ));
+        result.push({
+          ...customerMessages[0],
+          unreadCount: unreadCount[0]?.count || 0
+        });
+      }
+    }
+    return result.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+  }
+  // Get messages for a specific conversation between admin and customer
+  async getConversationMessages(customerId, adminId) {
+    return await db.select({
+      id: chatMessages.id,
+      senderId: chatMessages.senderId,
+      receiverId: chatMessages.receiverId,
+      orderId: chatMessages.orderId,
+      message: chatMessages.message,
+      type: chatMessages.type,
+      isRead: chatMessages.isRead,
+      isEdited: chatMessages.isEdited,
+      isDeleted: chatMessages.isDeleted,
+      editedAt: chatMessages.editedAt,
+      deletedAt: chatMessages.deletedAt,
+      createdAt: chatMessages.createdAt,
+      sender: {
+        id: users.id,
+        name: users.name,
+        role: users.role
+      }
+    }).from(chatMessages).innerJoin(users, eq(chatMessages.senderId, users.id)).where(and(
+      or(
+        and(eq(chatMessages.senderId, customerId), eq(chatMessages.receiverId, adminId)),
+        and(eq(chatMessages.senderId, adminId), eq(chatMessages.receiverId, customerId))
+      ),
+      eq(chatMessages.isDeleted, false)
+    )).orderBy(chatMessages.createdAt);
   }
   async getUserNotifications(userId) {
     return await db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt));
@@ -573,6 +657,7 @@ var DrizzleStorage = class {
       return;
     }
     const customerExists = await this.getUserByEmail("customer@demo.com");
+    let customerId;
     if (!customerExists) {
       const customerUser = await this.createUser({
         email: "customer@demo.com",
@@ -582,6 +667,42 @@ var DrizzleStorage = class {
         phone: "+63 917 123 4567"
       });
       await this.updateUserEmailVerification(customerUser.id, true);
+      customerId = customerUser.id;
+    } else {
+      customerId = customerExists.id;
+    }
+    const existingAddresses = await this.getUserAddresses(customerId);
+    if (existingAddresses.length === 0) {
+      await this.createAddress({
+        userId: customerId,
+        label: "Home",
+        street: "123 Mabini Street, Barangay San Jose",
+        city: "Manila",
+        province: "Metro Manila",
+        zipCode: "1000",
+        coordinates: JSON.stringify({ lat: 14.5995, lng: 120.9842 }),
+        isDefault: true
+      });
+      await this.createAddress({
+        userId: customerId,
+        label: "Office",
+        street: "456 Rizal Avenue, Bonifacio Global City",
+        city: "Taguig",
+        province: "Metro Manila",
+        zipCode: "1634",
+        coordinates: JSON.stringify({ lat: 14.5176, lng: 121.0509 }),
+        isDefault: false
+      });
+      await this.createAddress({
+        userId: customerId,
+        label: "Vacation House",
+        street: "789 Beach Road, Poblacion",
+        city: "Boracay",
+        province: "Aklan",
+        zipCode: "5608",
+        coordinates: JSON.stringify({ lat: 11.9674, lng: 121.9248 }),
+        isDefault: false
+      });
     }
     const existingProducts = await this.getProducts();
     if (existingProducts.length === 0) {
@@ -990,7 +1111,13 @@ async function registerRoutes(app2) {
       if (existingUser) {
         return res.status(400).json({ message: "User already exists" });
       }
-      const user = await storage.createUser(userData);
+      const now = /* @__PURE__ */ new Date();
+      const userDataWithTimestamps = {
+        ...userData,
+        termsAcceptedAt: userData.termsAccepted ? now : null,
+        privacyAcceptedAt: userData.privacyAccepted ? now : null
+      };
+      const user = await storage.createUser(userDataWithTimestamps);
       const verificationToken = emailService.generateVerificationToken();
       const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1e3);
       await storage.setEmailVerificationToken(user.id, verificationToken, tokenExpires);
@@ -1390,6 +1517,35 @@ async function registerRoutes(app2) {
       res.status(500).json({ message: "Failed to delete message" });
     }
   });
+  app2.delete("/api/chat/messages/:id/unsend", authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.unsendChatMessage(id, req.user.id);
+      if (!success) {
+        return res.status(404).json({ message: "Message not found or not authorized to unsend" });
+      }
+      res.json({ message: "Message unsent successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsend message" });
+    }
+  });
+  app2.get("/api/chat/customers", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const customers = await storage.getChatCustomers();
+      res.json(customers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch chat customers" });
+    }
+  });
+  app2.get("/api/chat/conversation/:customerId", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      const messages = await storage.getConversationMessages(customerId, req.user.id);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch conversation messages" });
+    }
+  });
   app2.get("/api/notifications", authenticateToken, async (req, res) => {
     try {
       const notifications2 = await storage.getUserNotifications(req.user.id);
@@ -1571,9 +1727,19 @@ var vite_config_default = defineConfig({
     emptyOutDir: true
   },
   server: {
+    host: "0.0.0.0",
+    port: 5e3,
+    strictPort: true,
     fs: {
       strict: true,
       deny: ["**/.*"]
+    },
+    hmr: {
+      host: "0.0.0.0"
+    },
+    headers: {
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *;"
     }
   }
 });
