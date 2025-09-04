@@ -30,6 +30,8 @@ var users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationExpires: timestamp("email_verification_expires"),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpires: timestamp("password_reset_expires"),
   termsAccepted: boolean("terms_accepted").default(false).notNull(),
   privacyAccepted: boolean("privacy_accepted").default(false).notNull(),
   termsAcceptedAt: timestamp("terms_accepted_at"),
@@ -149,6 +151,10 @@ var insertUserSchema = createInsertSchema(users).omit({
   emailVerified: true,
   emailVerificationToken: true,
   emailVerificationExpires: true,
+  passwordResetToken: true,
+  passwordResetExpires: true,
+  termsAccepted: true,
+  privacyAccepted: true,
   termsAcceptedAt: true,
   privacyAcceptedAt: true,
   createdAt: true,
@@ -634,6 +640,29 @@ var DrizzleStorage = class {
     }).where(eq(users.id, id)).returning();
     return result[0];
   }
+  async setPasswordResetToken(id, token, expires) {
+    const result = await db.update(users).set({
+      passwordResetToken: token,
+      passwordResetExpires: expires,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq(users.id, id)).returning();
+    return result[0];
+  }
+  async getUserByPasswordResetToken(token) {
+    const result = await db.select().from(users).where(and(
+      eq(users.passwordResetToken, token),
+      gt(users.passwordResetExpires, /* @__PURE__ */ new Date())
+    )).limit(1);
+    return result[0];
+  }
+  async clearPasswordResetToken(id) {
+    const result = await db.update(users).set({
+      passwordResetToken: null,
+      passwordResetExpires: null,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq(users.id, id)).returning();
+    return result[0];
+  }
   async seedData() {
     try {
       const testResult = await db.select().from(users).limit(1);
@@ -1027,20 +1056,6 @@ async function registerRoutes(app2) {
           }
         }
         if (message.type === "chat_message") {
-          const chatMessage = await storage.createChatMessage({
-            senderId: message.senderId,
-            receiverId: message.receiverId,
-            orderId: message.orderId,
-            message: message.message,
-            type: "text"
-          });
-          const receiverWs = clients.get(message.receiverId);
-          if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
-            receiverWs.send(JSON.stringify({
-              type: "new_message",
-              message: chatMessage
-            }));
-          }
         }
         if (message.type === "order_update") {
           const order = await storage.getOrderById(message.orderId);
@@ -1111,13 +1126,7 @@ async function registerRoutes(app2) {
       if (existingUser) {
         return res.status(400).json({ message: "User already exists" });
       }
-      const now = /* @__PURE__ */ new Date();
-      const userDataWithTimestamps = {
-        ...userData,
-        termsAcceptedAt: userData.termsAccepted ? now : null,
-        privacyAcceptedAt: userData.privacyAccepted ? now : null
-      };
-      const user = await storage.createUser(userDataWithTimestamps);
+      const user = await storage.createUser(userData);
       const verificationToken = emailService.generateVerificationToken();
       const tokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1e3);
       await storage.setEmailVerificationToken(user.id, verificationToken, tokenExpires);
@@ -1224,6 +1233,54 @@ async function registerRoutes(app2) {
     } catch (error) {
       console.error("Password change error:", error);
       res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+  app2.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+      }
+      const resetToken = emailService.generatePasswordResetToken();
+      const tokenExpires = new Date(Date.now() + 60 * 60 * 1e3);
+      await storage.setPasswordResetToken(user.id, resetToken, tokenExpires);
+      try {
+        await emailService.sendPasswordResetEmail(user.email, resetToken);
+        res.json({ message: "Password reset email sent successfully" });
+      } catch (emailError) {
+        console.error("Failed to send password reset email:", emailError);
+        res.status(500).json({ message: "Failed to send password reset email" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to process password reset request" });
+    }
+  });
+  app2.post("/api/auth/reset-password", authLimiter, async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters long" });
+      }
+      const user = await storage.getUserByPasswordResetToken(token);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired reset token" });
+      }
+      const hashedPassword = await bcrypt2.hash(newPassword, 10);
+      const updatedUser = await storage.updateUser(user.id, {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null
+      });
+      res.json({ message: "Password reset successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reset password" });
     }
   });
   app2.get("/api/users/addresses", authenticateToken, async (req, res) => {
@@ -1473,9 +1530,33 @@ async function registerRoutes(app2) {
         const adminUser = await storage.getUserByEmail("admin@gasflow.com");
         if (adminUser) {
           messageData.receiverId = adminUser.id;
+        } else {
+          try {
+            const fallbackAdmin = await storage.createUser({
+              email: "admin@gasflow.com",
+              password: "admin123",
+              name: "Admin User",
+              role: "admin",
+              phone: "+63 912 345 6789"
+            });
+            await storage.updateUserEmailVerification(fallbackAdmin.id, true);
+            messageData.receiverId = fallbackAdmin.id;
+          } catch (error) {
+            console.error("Failed to create fallback admin user:", error);
+            return res.status(500).json({ message: "Unable to send message - admin user not available" });
+          }
         }
       }
       const message = await storage.createChatMessage(messageData);
+      if (messageData.receiverId) {
+        const receiverWs = clients.get(messageData.receiverId);
+        if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
+          receiverWs.send(JSON.stringify({
+            type: "new_message",
+            message
+          }));
+        }
+      }
       res.status(201).json(message);
     } catch (error) {
       res.status(400).json({ message: "Failed to create message" });

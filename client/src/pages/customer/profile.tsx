@@ -579,7 +579,7 @@ export default function CustomerProfile() {
                               </p>
                             )}
                           </div>
-                          
+
                           <div>
                             <Label htmlFor="zipCode">ZIP Code</Label>
                             <Input
@@ -626,7 +626,7 @@ export default function CustomerProfile() {
                               </p>
                             )}
                           </div>
-                          
+
                           <div>
                             <Label htmlFor="province">Province</Label>
                             <Input

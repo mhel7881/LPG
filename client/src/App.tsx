@@ -29,6 +29,7 @@ import AdminOrders from "@/pages/admin/orders";
 import AdminInventory from "@/pages/admin/inventory";
 import AdminAnalytics from "@/pages/admin/analytics";
 import AdminPOS from "@/pages/admin/pos";
+import AdminLocationTracking from "@/pages/admin/location-tracking";
 import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 import TermsOfServicePage from "@/pages/terms-of-service";
@@ -197,6 +198,12 @@ function AppRoutes() {
             <Route path="/admin/pos">
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminPOS />
+              </ProtectedRoute>
+            </Route>
+
+            <Route path="/admin/location-tracking">
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminLocationTracking />
               </ProtectedRoute>
             </Route>
 

@@ -466,10 +466,9 @@ export default function AdminPOS() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="payment-method">Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={(value: any) => setPaymentMethod(value)}>
                   <SelectTrigger data-testid="select-payment-method">
-                    <SelectValue />
+                    <SelectValue placeholder="Select Payment Method" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Cash</SelectItem>

@@ -5,7 +5,6 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
@@ -20,8 +19,6 @@ import {
   CreditCard,
   MapPin,
   ArrowLeft,
-  CheckSquare,
-  Square,
   Loader2
 } from "lucide-react";
 
@@ -131,30 +128,11 @@ export default function CustomerCart() {
       return;
     }
 
-    setSelectedItems(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
-    });
+    // Single selection: select only this item, deselect others
+    setSelectedItems(new Set([itemId]));
   };
 
 
-  const handleSelectAll = () => {
-    // Don't allow select all if any items are being processed
-    if (processingItems.size > 0) {
-      return;
-    }
-
-    if (selectedItems.size === enrichedItems.length) {
-      setSelectedItems(new Set());
-    } else {
-      setSelectedItems(new Set(enrichedItems.map(item => item.id)));
-    }
-  };
 
   const handleUpdateQuantity = async (itemId: string, newQuantity: number) => {
     // Prevent multiple simultaneous operations on the same item
@@ -261,12 +239,12 @@ export default function CustomerCart() {
   };
 
   // Set default address if available and none selected
-  useState(() => {
+  useEffect(() => {
     if (addresses.length > 0 && !selectedAddressId) {
       const defaultAddress = addresses.find((addr: Address) => addr.isDefault) || addresses[0];
       setSelectedAddressId(defaultAddress.id);
     }
-  });
+  }, [addresses, selectedAddressId]);
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6 pb-20 md:pb-6">
@@ -312,28 +290,7 @@ export default function CustomerCart() {
           <div className="lg:col-span-2 space-y-4">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Cart Items</CardTitle>
-                  {enrichedItems.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectAll();
-                      }}
-                      disabled={processingItems.size > 0}
-                      className="text-sm"
-                    >
-                      {selectedItems.size === enrichedItems.length ? (
-                        <CheckSquare className="h-4 w-4 mr-2" />
-                      ) : (
-                        <Square className="h-4 w-4 mr-2" />
-                      )}
-                      {selectedItems.size === enrichedItems.length ? "Deselect All" : "Select All"}
-                    </Button>
-                  )}
-                </div>
+                <CardTitle>Cart Items</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {enrichedItems.map((item, index) => (
@@ -347,22 +304,16 @@ export default function CustomerCart() {
                     } ${processingItems.has(item.id) ? "opacity-60" : ""}`}
                     onClick={() => handleSelectItem(item.id)}
                   >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent event bubbling
-                        handleSelectItem(item.id);
-                      }}
-                      disabled={processingItems.has(item.id)}
-                      className="p-0 h-6 w-6"
-                    >
-                      {selectedItems.has(item.id) ? (
-                        <CheckSquare className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Square className="h-4 w-4" />
+
+                    <div className={`w-4 h-4 rounded-full border-2 transition-colors ${
+                      selectedItems.has(item.id)
+                        ? "border-primary bg-primary"
+                        : "border-gray-300 dark:border-gray-600"
+                    }`}>
+                      {selectedItems.has(item.id) && (
+                        <div className="w-full h-full rounded-full bg-white scale-50"></div>
                       )}
-                    </Button>
+                    </div>
 
                     <div className="w-16 h-16 bg-primary/10 rounded-lg flex items-center justify-center">
                       <Package className="h-8 w-8 text-primary" />
@@ -546,7 +497,8 @@ export default function CustomerCart() {
               </CardHeader>
               <CardContent>
                 <Input
-                  placeholder="Special instructions (optional)"
+                  id="order-notes"
+                  label="Special Instructions (Optional)"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   data-testid="input-order-notes"

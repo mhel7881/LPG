@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,10 @@ import {
   Truck,
   Package,
   Filter,
-  Eye
+  Eye,
+  CheckCircle,
+  Clock,
+  X
 } from "lucide-react";
 
 interface Customer {
@@ -51,19 +54,54 @@ interface Order {
   customer: Customer;
   address?: Address;
   createdAt: string;
+  quantity?: number;
+  type?: string;
+  unitPrice?: string;
+  totalAmount?: string;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  notes?: string;
 }
 
 export default function AdminLocationTracking() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"customers" | "orders">("orders");
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [location] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Parse query parameters
   const urlParams = new URLSearchParams(location.split('?')[1] || '');
   const orderIdParam = urlParams.get('orderId');
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"customers" | "orders" | "order_details">(orderIdParam ? "order_details" : "orders");
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+
+  const updateOrderStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error("Failed to update order status");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/orders/tracking"] });
+      toast({
+        title: "Order Updated",
+        description: `Order ${data.orderNumber} status updated successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update order status",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Fetch customer addresses with GPS coordinates
   const { data: addresses = [], isLoading: addressesLoading, refetch: refetchAddresses } = useQuery({
@@ -124,14 +162,39 @@ export default function AdminLocationTracking() {
       case "processing": return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400";
       case "out_for_delivery": return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400";
       case "delivered": return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400";
+      case "cancelled": return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400";
       default: return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400";
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "pending": return <Clock className="h-4 w-4" />;
+      case "processing": return <Package className="h-4 w-4" />;
+      case "out_for_delivery": return <Truck className="h-4 w-4" />;
+      case "delivered": return <CheckCircle className="h-4 w-4" />;
+      case "cancelled": return <X className="h-4 w-4" />;
+      default: return <Package className="h-4 w-4" />;
+    }
+  };
+
   const formatStatus = (status: string) => {
-    return status.split('_').map(word => 
+    return status.split('_').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
+  };
+
+  const getNextStatus = (currentStatus: string): string | null => {
+    switch (currentStatus) {
+      case "pending": return "processing";
+      case "processing": return "out_for_delivery";
+      case "out_for_delivery": return "delivered";
+      default: return null;
+    }
+  };
+
+  const handleStatusUpdate = (orderId: string, newStatus: string) => {
+    updateOrderStatusMutation.mutate({ orderId, status: newStatus });
   };
 
   // Generate map markers based on current view
@@ -143,7 +206,7 @@ export default function AdminLocationTracking() {
           latitude: address.coordinates!.lat,
           longitude: address.coordinates!.lng
         },
-        title: `${address.user.name} - ${address.label}`,
+        title: `${address.user.name} - ${address.label} - ${address.street}, ${address.city}`,
         type: "customer" as const
       }));
     } else {
@@ -153,7 +216,7 @@ export default function AdminLocationTracking() {
           latitude: order.address!.coordinates!.lat,
           longitude: order.address!.coordinates!.lng
         },
-        title: `${order.orderNumber} - ${order.customer.name}`,
+        title: `${order.orderNumber} - ${order.customer.name} - ${order.address!.street}, ${order.address!.city}`,
         type: order.status === "out_for_delivery" ? "delivery" : "destination" as const
       }));
     }
@@ -265,6 +328,16 @@ export default function AdminLocationTracking() {
                 <Users className="h-4 w-4 mr-2" />
                 Customers
               </Button>
+              <Button
+                variant={viewMode === "order_details" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setViewMode("order_details")}
+                disabled={!orderIdParam}
+                data-testid="button-view-order-details"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Order Details
+              </Button>
             </div>
 
             {/* Search */}
@@ -326,7 +399,114 @@ export default function AdminLocationTracking() {
 
       {/* Data List */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {viewMode === "orders" ? (
+        {viewMode === "order_details" && orderIdParam ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Order Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {filteredOrders.length > 0 ? (
+                (() => {
+                  const order = filteredOrders[0]; // Since filtered to one order
+                  return (
+                    <div className="space-y-6">
+                      {/* Order Header */}
+                      <div className="flex flex-col space-y-4 md:flex-row md:space-y-0 md:items-start md:space-x-4">
+                        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                          {getStatusIcon(order.status)}
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex flex-col space-y-2 md:flex-row md:items-start md:justify-between md:space-y-0">
+                            <div>
+                              <h3 className="font-semibold text-lg" data-testid={`text-order-number-${order.id}`}>
+                                {order.orderNumber}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                Customer: {order.customer.name} ({order.customer.email})
+                              </p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <Badge className={getStatusColor(order.status)} data-testid={`badge-order-status-${order.id}`}>
+                                  {formatStatus(order.status)}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(order.createdAt).toLocaleDateString()} • {new Date(order.createdAt).toLocaleTimeString()}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold text-xl" data-testid={`text-order-amount-${order.id}`}>
+                                ₱{order.totalAmount || 'N/A'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {order.paymentMethod?.toUpperCase() || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Address */}
+                          {order.address && (
+                            <div className="bg-muted/30 p-4 rounded-lg">
+                              <h4 className="font-medium mb-2">Delivery Address</h4>
+                              <div className="text-sm text-muted-foreground">
+                                <div className="flex items-center space-x-2">
+                                  <MapPin className="h-4 w-4" />
+                                  <span>
+                                    {order.address.street}, {order.address.city}, {order.address.province} {order.address.zipCode}
+                                  </span>
+                                </div>
+                                {order.address.coordinates && (
+                                  <div className="flex items-center space-x-2 mt-1">
+                                    <Navigation className="h-4 w-4 text-green-600" />
+                                    <span className="text-green-600 font-medium">
+                                      {order.address.coordinates.lat.toFixed(6)}, {order.address.coordinates.lng.toFixed(6)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Status Update Buttons */}
+                          <div className="flex flex-wrap gap-2 pt-4 border-t">
+                            {getNextStatus(order.status) && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleStatusUpdate(order.id, getNextStatus(order.status)!)}
+                                disabled={updateOrderStatusMutation.isPending}
+                                data-testid={`button-advance-status-${order.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Mark as {formatStatus(getNextStatus(order.status)!)}
+                              </Button>
+                            )}
+
+                            {order.status === "pending" && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleStatusUpdate(order.id, "cancelled")}
+                                disabled={updateOrderStatusMutation.isPending}
+                                data-testid={`button-cancel-order-${order.id}`}
+                              >
+                                <X className="h-4 w-4 mr-2" />
+                                Cancel Order
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-center py-8">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-muted-foreground">Order not found or no location data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : viewMode === "orders" ? (
           <Card>
             <CardHeader>
               <CardTitle>Active Orders with Location</CardTitle>

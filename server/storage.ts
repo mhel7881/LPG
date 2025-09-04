@@ -285,6 +285,13 @@ export class DrizzleStorage implements IStorage {
       orderNumber: orders.orderNumber,
       status: orders.status,
       createdAt: orders.createdAt,
+      quantity: orders.quantity,
+      type: orders.type,
+      unitPrice: orders.unitPrice,
+      totalAmount: orders.totalAmount,
+      paymentMethod: orders.paymentMethod,
+      paymentStatus: orders.paymentStatus,
+      notes: orders.notes,
       customer: {
         id: users.id,
         name: users.name,
@@ -304,10 +311,10 @@ export class DrizzleStorage implements IStorage {
     .innerJoin(users, eq(orders.customerId, users.id))
     .leftJoin(addresses, eq(orders.addressId, addresses.id))
     .orderBy(desc(orders.createdAt));
-    
+
     // Filter in memory for active orders with coordinates
-    return result.filter(order => 
-      order.address?.coordinates != null && 
+    return result.filter(order =>
+      order.address?.coordinates != null &&
       ['pending', 'processing', 'out_for_delivery'].includes(order.status)
     );
   }

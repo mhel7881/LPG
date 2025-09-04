@@ -282,9 +282,9 @@ export default function AdminInventory() {
             </div>
 
             <div>
-              <Label htmlFor="description">Description</Label>
               <Textarea
                 id="description"
+                placeholder="Product description (optional)"
                 {...productForm.register("description")}
                 data-testid="input-product-description"
               />

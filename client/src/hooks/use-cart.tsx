@@ -98,33 +98,42 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     setIsLoading(true);
-    
-    // Create temp item outside try block so it's accessible in catch
-    const tempItem: CartItem = {
-      id: `temp-${Date.now()}`,
-      productId,
-      quantity,
-      type,
-    };
-    
-    try {
-      // Optimistic update
-      const newItems = [...items, tempItem];
-      setItems(newItems);
-      await saveCartToIndexedDB(newItems);
 
-      if (navigator.onLine && token) {
-        const response = await apiRequest("POST", "/api/cart", {
+    try {
+      // Check if item already exists
+      const existingItem = items.find(item => item.productId === productId && item.type === type);
+
+      if (existingItem) {
+        // Update existing item quantity
+        const newQuantity = existingItem.quantity + quantity;
+        await updateItem(existingItem.id, newQuantity);
+      } else {
+        // Create temp item for new addition
+        const tempItem: CartItem = {
+          id: `temp-${Date.now()}`,
           productId,
           quantity,
           type,
-        });
-        const actualItem = await response.json();
-        
-        // Replace temp item with actual item
-        setItems(prev => prev.map(item => 
-          item.id === tempItem.id ? actualItem : item
-        ));
+        };
+
+        // Optimistic update
+        const newItems = [...items, tempItem];
+        setItems(newItems);
+        await saveCartToIndexedDB(newItems);
+
+        if (navigator.onLine && token) {
+          const response = await apiRequest("POST", "/api/cart", {
+            productId,
+            quantity,
+            type,
+          });
+          const actualItem = await response.json();
+
+          // Replace temp item with actual item
+          setItems(prev => prev.map(item =>
+            item.id === tempItem.id ? actualItem : item
+          ));
+        }
       }
 
       toast({
@@ -132,9 +141,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         description: "Item has been added to your cart.",
       });
     } catch (error: any) {
-      // Revert optimistic update
-      setItems(prev => prev.filter(item => item.id !== tempItem.id));
-      
       toast({
         title: "Error",
         description: error.message || "Failed to add item to cart",

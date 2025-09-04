@@ -348,7 +348,6 @@ export default function CustomerSchedules() {
               </div>
 
               <div>
-                <Label htmlFor="product">Product</Label>
                 <Select
                   value={formData.productId}
                   onValueChange={(value) => setFormData({ ...formData, productId: value })}
@@ -367,7 +366,6 @@ export default function CustomerSchedules() {
               </div>
 
               <div>
-                <Label htmlFor="address">Delivery Address</Label>
                 <Select
                   value={formData.addressId}
                   onValueChange={(value) => setFormData({ ...formData, addressId: value })}
@@ -398,13 +396,12 @@ export default function CustomerSchedules() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="type">Type</Label>
                   <Select
                     value={formData.type}
                     onValueChange={(value: "new" | "swap") => setFormData({ ...formData, type: value })}
                   >
                     <SelectTrigger data-testid="select-type">
-                      <SelectValue />
+                      <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="new">New Tank</SelectItem>
@@ -415,15 +412,14 @@ export default function CustomerSchedules() {
               </div>
 
               <div>
-                <Label htmlFor="frequency">Frequency</Label>
                 <Select
                   value={formData.frequency}
-                  onValueChange={(value: "weekly" | "biweekly" | "monthly") => 
+                  onValueChange={(value: "weekly" | "biweekly" | "monthly") =>
                     setFormData({ ...formData, frequency: value })
                   }
                 >
                   <SelectTrigger data-testid="select-frequency">
-                    <SelectValue />
+                    <SelectValue placeholder="Select frequency" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="weekly">Weekly</SelectItem>
@@ -448,13 +444,12 @@ export default function CustomerSchedules() {
                 </div>
               ) : (
                 <div>
-                  <Label htmlFor="dayOfWeek">Day of Week</Label>
                   <Select
                     value={formData.dayOfWeek.toString()}
                     onValueChange={(value) => setFormData({ ...formData, dayOfWeek: parseInt(value) })}
                   >
                     <SelectTrigger data-testid="select-day-of-week">
-                      <SelectValue />
+                      <SelectValue placeholder="Select day of week" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="0">Sunday</SelectItem>
