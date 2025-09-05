@@ -98,14 +98,14 @@ export default function ForgotPasswordPage() {
       >
         {/* Logo and Brand */}
         <div className="text-center mb-8">
-          <motion.div
+         <motion.img
+            src="/solane-tank.png"
+            alt="Logo"
+            className="block mx-auto h-16 w-16 object-contain mb-4"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-red-600 rounded-2xl mb-4 shadow-lg"
-          >
-            <Flame className="h-8 w-8 text-white" />
-          </motion.div>
+          />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Forgot Password
           </h1>
@@ -140,7 +140,7 @@ export default function ForgotPasswordPage() {
 
               <Button
                 type="submit"
-                className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary hover:bg-primary/90 px-4 py-2 w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                 disabled={isSubmitting}
               >
                 {isSubmitting && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
@@ -153,7 +153,7 @@ export default function ForgotPasswordPage() {
         {/* Back to Login */}
         <div className="mt-8 text-center">
           <Link href="/login">
-            <button className="text-orange-600 hover:text-orange-700 font-semibold transition-colors flex items-center justify-center gap-2">
+            <button className="text-gray-500 hover:text-gray-700 font-semibold transition-colors flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" />
               Back to Login
             </button>

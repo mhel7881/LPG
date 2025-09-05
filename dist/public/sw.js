@@ -1,7 +1,7 @@
 // Service Worker for GasFlow App
 // Handles push notifications and offline caching
 
-const CACHE_NAME = "gasflow-v1";
+const CACHE_NAME = "gasflow-v3";
 const APP_SHELL_URLS = [
   "/",
   "/manifest.json",

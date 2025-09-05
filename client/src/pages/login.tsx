@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Flame, Loader2, Mail, Eye, EyeOff } from "lucide-react";
+import { Flame, Loader2, Mail } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -34,7 +34,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [resendEmail, setResendEmail] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [showResendVerification, setShowResendVerification] = useState(false);
   const { login, register } = useAuth();
   const { toast } = useToast();
@@ -155,20 +154,20 @@ export default function LoginPage() {
       >
         {/* Logo and Brand */}
         <div className="text-center mb-8">
-          <motion.div
+          <motion.img
+            src="/solane-tank.png"
+            alt="Logo"
+            className="block mx-auto h-16 w-16 object-contain mb-4"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4 shadow-lg"
-          >
-            <img src="/solane-tank.png" alt="Logo" className="h-8 w-8 object-contain" />
-          </motion.div>
+          />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            {isSignUp ? "Create Account" : "Welcome"}
+            {isSignUp ? "Create Account" : "Welcome Back"}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
             {isSignUp 
-              ? "Sign up to get starteh " 
+              ? "Sign up to get started" 
               : "Sign in to your GasFlow account"
             }
           </p>
@@ -207,19 +206,12 @@ export default function LoginPage() {
                     <div className="relative mt-1">
                       <Input
                         id="login-password"
-                        type={showPassword ? "text" : "password"}
+                        type="password"
                         placeholder="Enter your password"
-                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors pr-12"
+                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                         {...loginForm.register("password")}
                         data-testid="input-login-password"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                      >
-                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                      </button>
                     </div>
                     {loginForm.formState.errors.password && (
                       <p className="text-sm text-red-600 mt-1" data-testid="error-login-password">
@@ -244,7 +236,7 @@ export default function LoginPage() {
                   <Link href="/forgot-password">
                     <button
                       type="button"
-                      className="text-sm text-orange-600 hover:text-orange-700 font-medium"
+                      className="text-sm text-gray-500 hover:text-orange-700 font-medium"
                     >
                       Forgot your password?
                     </button>

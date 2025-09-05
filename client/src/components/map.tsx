@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { MapPin, Navigation, RefreshCw } from 'lucide-react';
@@ -13,10 +13,11 @@ interface MapProps {
     type: 'customer' | 'delivery' | 'destination';
   }>;
   onLocationSelect?: (position: GeolocationPosition) => void;
+  onMarkerClick?: (markerId: string) => void;
   className?: string;
 }
 
-export default function Map({ center, markers = [], onLocationSelect, className }: MapProps) {
+export default function Map({ center, markers = [], onLocationSelect, onMarkerClick, className }: MapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -34,19 +35,24 @@ export default function Map({ center, markers = [], onLocationSelect, className 
 
   const defaultCenter = center || { latitude: 14.5995, longitude: 120.9842 }; // Manila, Philippines
 
-  const handleLocationClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleLocationClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (onMarkerClick && markers.length === 1) {
+      onMarkerClick(markers[0].id);
+      return;
+    }
+
     if (!onLocationSelect) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     // Convert click position to approximate coordinates (this is simplified)
     const lat = defaultCenter.latitude + (0.01 * (y - rect.height / 2) / (rect.height / 2));
     const lng = defaultCenter.longitude + (0.01 * (x - rect.width / 2) / (rect.width / 2));
-    
+
     onLocationSelect({ latitude: lat, longitude: lng });
-  };
+  }, [onMarkerClick, markers, onLocationSelect, defaultCenter]);
 
   if (mapError) {
     return (
@@ -113,11 +119,12 @@ export default function Map({ center, markers = [], onLocationSelect, className 
                 return (
                   <div
                     key={marker.id}
-                    className="absolute transform -translate-x-1/2 -translate-y-1/2"
+                    className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer"
                     style={{
                       left: `calc(50% + ${Math.max(-120, Math.min(120, offsetX))}px)`,
                       top: `calc(50% + ${Math.max(-80, Math.min(80, offsetY))}px)`
                     }}
+                    onClick={() => onMarkerClick?.(marker.id)}
                   >
                     <div className={`w-6 h-6 ${getMarkerColor(marker.type)} rounded-full border-2 border-white shadow-lg flex items-center justify-center`}>
                       <div className="w-2 h-2 bg-white rounded-full"></div>

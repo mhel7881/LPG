@@ -197,6 +197,14 @@ export default function AdminLocationTracking() {
     updateOrderStatusMutation.mutate({ orderId, status: newStatus });
   };
 
+  const handleMarkerClick = (markerId: string) => {
+    // Find the order by marker ID
+    const order = [...orders, ...filteredOrders].find(o => o.id === markerId);
+    if (order && getNextStatus(order.status)) {
+      handleStatusUpdate(order.id, getNextStatus(order.status)!);
+    }
+  };
+
   // Generate map markers based on current view
   const getMapMarkers = () => {
     if (viewMode === "customers") {
@@ -391,6 +399,7 @@ export default function AdminLocationTracking() {
             <Map
               center={getMapCenter()}
               markers={getMapMarkers()}
+              onMarkerClick={handleMarkerClick}
               className="h-96"
             />
           )}
@@ -445,8 +454,11 @@ export default function AdminLocationTracking() {
 
                           {/* Address */}
                           {order.address && (
-                            <div className="bg-muted/30 p-4 rounded-lg">
-                              <h4 className="font-medium mb-2">Delivery Address</h4>
+                            <div
+                              className="bg-muted/30 p-4 rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => getNextStatus(order.status) && handleStatusUpdate(order.id, getNextStatus(order.status)!)}
+                            >
+                              <h4 className="font-medium mb-2">Delivery Address (Click to update status)</h4>
                               <div className="text-sm text-muted-foreground">
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="h-4 w-4" />
