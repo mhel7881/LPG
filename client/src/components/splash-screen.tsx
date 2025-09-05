@@ -49,7 +49,7 @@ export default function SplashScreen({ onContinue }: SplashScreenProps) {
             className="relative"
           >
             <img
-              src="/flame-logo.png"
+              src="/solane-tank.png"
               alt="GasFlow Logo"
               className="w-32 h-32 md:w-40 md:h-40 object-contain filter drop-shadow-2xl"
             />

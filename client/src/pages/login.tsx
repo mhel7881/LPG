@@ -159,16 +159,16 @@ export default function LoginPage() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-red-600 rounded-2xl mb-4 shadow-lg"
+            className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4 shadow-lg"
           >
-            <Flame className="h-8 w-8 text-white" />
+            <img src="/solane-tank.png" alt="Logo" className="h-8 w-8 object-contain" />
           </motion.div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            {isSignUp ? "Create Account" : "Welcome Back"}
+            {isSignUp ? "Create Account" : "Welcome"}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
             {isSignUp 
-              ? "Sign up to get started with GasFlow" 
+              ? "Sign up to get starteh " 
               : "Sign in to your GasFlow account"
             }
           </p>
@@ -231,7 +231,7 @@ export default function LoginPage() {
 
                 <Button
                   type="submit"
-                  className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                   disabled={isLoading}
                   data-testid="button-login-submit"
                 >
@@ -263,7 +263,7 @@ export default function LoginPage() {
                       id="register-name"
                       type="text"
                       placeholder="Enter your full name"
-                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                       {...registerForm.register("name")}
                       data-testid="input-register-name"
                     />
@@ -282,7 +282,7 @@ export default function LoginPage() {
                       id="register-email"
                       type="email"
                       placeholder="Enter your email"
-                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                       {...registerForm.register("email")}
                       data-testid="input-register-email"
                     />
@@ -301,7 +301,7 @@ export default function LoginPage() {
                       id="register-phone"
                       type="tel"
                       placeholder="Enter your phone number"
-                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                       {...registerForm.register("phone")}
                       data-testid="input-register-phone"
                     />
@@ -315,7 +315,7 @@ export default function LoginPage() {
                       id="register-password"
                       type="password"
                       placeholder="Create a strong password"
-                      className="mt-1 h-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
                       {...registerForm.register("password")}
                       data-testid="input-register-password"
                     />
@@ -330,7 +330,7 @@ export default function LoginPage() {
 
                 <Button
                   type="submit"
-                  className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                   disabled={isLoading}
                   data-testid="button-register-submit"
                 >

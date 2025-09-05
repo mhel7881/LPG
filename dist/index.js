@@ -335,6 +335,13 @@ var DrizzleStorage = class {
       orderNumber: orders.orderNumber,
       status: orders.status,
       createdAt: orders.createdAt,
+      quantity: orders.quantity,
+      type: orders.type,
+      unitPrice: orders.unitPrice,
+      totalAmount: orders.totalAmount,
+      paymentMethod: orders.paymentMethod,
+      paymentStatus: orders.paymentStatus,
+      notes: orders.notes,
       customer: {
         id: users.id,
         name: users.name,

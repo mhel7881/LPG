@@ -1,7 +1,7 @@
 // Service Worker for GasFlow App
 // Handles push notifications and offline caching
 
-const CACHE_NAME = "gasflow-v1";
+const CACHE_NAME = "gasflow-v4"; // bump version para fresh cache
 const APP_SHELL_URLS = [
   "/",
   "/manifest.json",
@@ -40,6 +40,12 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  // 🔑 Always fetch fresh login page (never cached)
+  if (event.request.url.includes("/login")) {
+    event.respondWith(fetch(event.request));
     return;
   }
 
