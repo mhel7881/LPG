@@ -128,8 +128,30 @@ export default function CustomerCart() {
       return;
     }
 
-    // Single selection: select only this item, deselect others
-    setSelectedItems(new Set([itemId]));
+    // Multiple selection: toggle this item while preserving others
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allItemIds = new Set(enrichedItems.map(item => item.id));
+    setSelectedItems(prev => {
+      // If all items are already selected, deselect all
+      const currentlySelected = enrichedItems.filter(item => prev.has(item.id)).length;
+      if (currentlySelected === enrichedItems.length) {
+        return new Set();
+      } else {
+        // Otherwise, select all
+        return allItemIds;
+      }
+    });
   };
 
 
@@ -290,7 +312,19 @@ export default function CustomerCart() {
           <div className="lg:col-span-2 space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Cart Items</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Cart Items</CardTitle>
+                  {enrichedItems.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSelectAll}
+                      data-testid="button-select-all"
+                    >
+                      {selectedItems.size === enrichedItems.length ? "Deselect All" : "Select All"}
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {enrichedItems.map((item, index) => (
@@ -305,13 +339,13 @@ export default function CustomerCart() {
                     onClick={() => handleSelectItem(item.id)}
                   >
 
-                    <div className={`w-4 h-4 rounded-full border-2 transition-colors ${
+                    <div className={`w-4 h-4 rounded border-2 transition-colors flex items-center justify-center ${
                       selectedItems.has(item.id)
                         ? "border-primary bg-primary"
                         : "border-gray-300 dark:border-gray-600"
                     }`}>
                       {selectedItems.has(item.id) && (
-                        <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                        <div className="w-2 h-2 bg-white rounded-sm"></div>
                       )}
                     </div>
 

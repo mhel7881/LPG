@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,13 +13,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  Plus, 
-  Edit, 
-  Package, 
+import {
+  Plus,
+  Edit,
+  Package,
   AlertTriangle,
   TrendingUp,
-  Search
+  Search,
+  Upload,
+  X,
+  Image as ImageIcon,
+  Trash2
 } from "lucide-react";
 
 const productSchema = z.object({
@@ -52,6 +56,10 @@ export default function AdminInventory() {
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -136,6 +144,31 @@ export default function AdminInventory() {
     },
   });
 
+  const deleteProductMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/products/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to delete product");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({
+        title: "Product Deleted",
+        description: "Product has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete product",
+        variant: "destructive",
+      });
+    },
+  });
+
   const filteredProducts = products.filter((product: Product) =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -162,17 +195,43 @@ export default function AdminInventory() {
     };
   };
 
-  const onProductSubmit = (data: ProductFormData) => {
-    if (editingProduct) {
-      updateProductMutation.mutate({ id: editingProduct.id, data });
-    } else {
-      createProductMutation.mutate(data);
+  const onProductSubmit = async (data: ProductFormData) => {
+    setIsUploading(true);
+    try {
+      let imageUrl = editingProduct?.image || null;
+
+      // Upload image if selected
+      if (selectedImage) {
+        imageUrl = await uploadImageToSupabase(selectedImage);
+      }
+
+      const productData = {
+        ...data,
+        image: imageUrl,
+      };
+
+      if (editingProduct) {
+        updateProductMutation.mutate({ id: editingProduct.id, data: productData });
+      } else {
+        createProductMutation.mutate(productData);
+      }
+    } catch (error: any) {
+      console.error('Image upload error:', error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload image. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     setIsAddingProduct(true);
+    setSelectedImage(null);
+    setImagePreview(product.image || null);
     productForm.reset({
       name: product.name,
       description: product.description || "",
@@ -187,7 +246,80 @@ export default function AdminInventory() {
   const handleCancelForm = () => {
     setIsAddingProduct(false);
     setEditingProduct(null);
+    setSelectedImage(null);
+    setImagePreview(null);
     productForm.reset();
+  };
+
+  const handleDeleteProduct = (product: Product) => {
+    if (confirm(`Are you sure you want to delete "${product.name}"? This action cannot be undone.`)) {
+      deleteProductMutation.mutate(product.id);
+    }
+  };
+
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select an image file",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please select an image smaller than 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setSelectedImage(file);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const uploadImageToSupabase = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Get auth headers but exclude Content-Type for FormData
+    const authHeaders = getAuthHeaders();
+    const { "Content-Type": _, ...headersWithoutContentType } = authHeaders as any;
+
+    const response = await fetch('/api/upload/image', {
+      method: 'POST',
+      headers: headersWithoutContentType,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: 'Upload failed' }));
+      throw new Error(errorData.message || 'Failed to upload image');
+    }
+
+    const data = await response.json();
+    return data.imageUrl;
   };
 
   const totalValue = products.reduce((total: number, product: Product) => {
@@ -259,13 +391,13 @@ export default function AdminInventory() {
 
       {/* Product Form Dialog */}
       <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingProduct ? "Edit Product" : "Add New Product"}
             </DialogTitle>
           </DialogHeader>
-          
+
           <form onSubmit={productForm.handleSubmit(onProductSubmit)} className="space-y-4">
             <div>
               <Label htmlFor="name">Product Name</Label>
@@ -288,6 +420,65 @@ export default function AdminInventory() {
                 {...productForm.register("description")}
                 data-testid="input-product-description"
               />
+            </div>
+
+            {/* Image Upload */}
+            <div>
+              <Label>Product Image</Label>
+              <div className="mt-2">
+                {imagePreview ? (
+                  <div className="relative">
+                    <img
+                      src={imagePreview}
+                      alt="Product preview"
+                      className="w-full h-48 object-cover rounded-lg border"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="absolute top-2 right-2"
+                      onClick={handleRemoveImage}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-sm text-gray-600 mb-2">
+                      Click to upload product image
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      PNG, JPG, GIF up to 5MB
+                    </p>
+                  </div>
+                )}
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+
+                {imagePreview && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Change Image
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div>
@@ -358,15 +549,22 @@ export default function AdminInventory() {
             <div className="flex space-x-3">
               <Button
                 type="submit"
-                disabled={createProductMutation.isPending || updateProductMutation.isPending}
+                disabled={createProductMutation.isPending || updateProductMutation.isPending || isUploading}
                 data-testid="button-save-product"
               >
-                {editingProduct ? "Update Product" : "Add Product"}
+                {isUploading && <Upload className="mr-2 h-4 w-4 animate-spin" />}
+                {isUploading
+                  ? "Uploading..."
+                  : editingProduct
+                    ? "Update Product"
+                    : "Add Product"
+                }
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleCancelForm}
+                disabled={isUploading}
                 data-testid="button-cancel-product"
               >
                 Cancel
@@ -426,6 +624,17 @@ export default function AdminInventory() {
               >
                 <Card className="hover:shadow-lg transition-shadow duration-200">
                   <CardContent className="p-4">
+                    {/* Product Image */}
+                    {product.image && (
+                      <div className="mb-4">
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-semibold" data-testid={`text-product-name-${product.id}`}>
                         {product.name}
@@ -482,6 +691,16 @@ export default function AdminInventory() {
                       >
                         <Edit className="h-4 w-4 mr-1" />
                         Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => handleDeleteProduct(product)}
+                        disabled={deleteProductMutation.isPending}
+                        data-testid={`button-delete-product-${product.id}`}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="outline"

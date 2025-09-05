@@ -62,6 +62,7 @@ export interface IStorage {
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, updates: Partial<InsertProduct>): Promise<Product | undefined>;
   updateProductStock(id: string, stock: number): Promise<Product | undefined>;
+  deleteProduct(id: string): Promise<boolean>;
   
   // Orders
   getOrders(): Promise<Order[]>;
@@ -90,6 +91,7 @@ export interface IStorage {
   getUserNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<boolean>;
+  deleteNotification(id: string, userId: string): Promise<boolean>;
   
   // Delivery Schedules
   getDeliverySchedules(userId: string): Promise<DeliverySchedule[]>;
@@ -244,6 +246,29 @@ export class DrizzleStorage implements IStorage {
       updatedAt: new Date(),
     }).where(eq(products.id, id)).returning();
     return result[0];
+  }
+
+  async deleteProduct(id: string): Promise<boolean> {
+    try {
+      console.log('Attempting to delete product:', id);
+      // First check if product exists
+      const existingProduct = await this.getProduct(id);
+      console.log('Existing product:', existingProduct);
+
+      if (!existingProduct) {
+        console.log('Product not found');
+        return false;
+      }
+
+      await db.update(products).set({
+        isActive: false,
+      }).where(eq(products.id, id));
+      console.log('Update completed');
+      return true;
+    } catch (error) {
+      console.error('Delete product error:', error);
+      return false;
+    }
   }
 
   async getOrders(): Promise<Order[]> {
@@ -552,6 +577,16 @@ export class DrizzleStorage implements IStorage {
     const result = await db.update(notifications)
       .set({ isRead: true })
       .where(eq(notifications.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    const result = await db.delete(notifications)
+      .where(and(
+        eq(notifications.id, id),
+        eq(notifications.userId, userId) // Ensure user can only delete their own notifications
+      ))
       .returning();
     return result.length > 0;
   }

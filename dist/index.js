@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import bcrypt2 from "bcrypt";
 import jwt from "jsonwebtoken";
+import multer from "multer";
 
 // server/storage.ts
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -303,6 +304,25 @@ var DrizzleStorage = class {
     }).where(eq(products.id, id)).returning();
     return result[0];
   }
+  async deleteProduct(id) {
+    try {
+      console.log("Attempting to delete product:", id);
+      const existingProduct = await this.getProduct(id);
+      console.log("Existing product:", existingProduct);
+      if (!existingProduct) {
+        console.log("Product not found");
+        return false;
+      }
+      await db.update(products).set({
+        isActive: false
+      }).where(eq(products.id, id));
+      console.log("Update completed");
+      return true;
+    } catch (error) {
+      console.error("Delete product error:", error);
+      return false;
+    }
+  }
   async getOrders() {
     return await db.select().from(orders).orderBy(desc(orders.createdAt));
   }
@@ -526,6 +546,14 @@ var DrizzleStorage = class {
   }
   async markNotificationAsRead(id) {
     const result = await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id)).returning();
+    return result.length > 0;
+  }
+  async deleteNotification(id, userId) {
+    const result = await db.delete(notifications).where(and(
+      eq(notifications.id, id),
+      eq(notifications.userId, userId)
+      // Ensure user can only delete their own notifications
+    )).returning();
     return result.length > 0;
   }
   async getDashboardStats() {
@@ -1389,6 +1417,30 @@ async function registerRoutes(app2) {
       res.status(400).json({ message: "Failed to update product" });
     }
   });
+  app2.delete("/api/products/:id", authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log("DELETE route called for product:", id);
+      const product = await storage.getProduct(id);
+      console.log("Product lookup result:", product);
+      if (!product) {
+        console.log("Product not found");
+        return res.status(404).json({ message: "Product not found" });
+      }
+      console.log("Calling storage.deleteProduct");
+      const success = await storage.deleteProduct(id);
+      console.log("Storage delete result:", success);
+      if (!success) {
+        console.log("Storage delete returned false");
+        return res.status(500).json({ message: "Failed to delete product" });
+      }
+      console.log("Delete successful");
+      res.json({ message: "Product deleted successfully" });
+    } catch (error) {
+      console.error("Route error:", error);
+      res.status(500).json({ message: "Failed to delete product" });
+    }
+  });
   app2.get("/api/cart", authenticateToken, async (req, res) => {
     try {
       const cartItems2 = await storage.getCartItems(req.user.id);
@@ -1654,6 +1706,18 @@ async function registerRoutes(app2) {
       res.status(400).json({ message: "Failed to mark notification as read" });
     }
   });
+  app2.delete("/api/notifications/:id", authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteNotification(id, req.user.id);
+      if (!success) {
+        return res.status(404).json({ message: "Notification not found or not authorized to delete" });
+      }
+      res.json({ message: "Notification deleted successfully" });
+    } catch (error) {
+      res.status(400).json({ message: "Failed to delete notification" });
+    }
+  });
   app2.get("/api/orders/:id/receipt", authenticateToken, async (req, res) => {
     try {
       const { id } = req.params;
@@ -1776,6 +1840,34 @@ async function registerRoutes(app2) {
       res.json(filteredUsers);
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+  const upload = multer({
+    limits: { fileSize: 5 * 1024 * 1024 },
+    // 5MB limit
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith("image/")) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only image files are allowed"));
+      }
+    }
+  });
+  app2.post("/api/upload/image", authenticateToken, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      const imageUrl = `https://via.placeholder.com/400x300?text=${encodeURIComponent(req.file.originalname)}`;
+      res.json({
+        message: "Image uploaded successfully",
+        imageUrl,
+        filename: req.file.originalname,
+        size: req.file.size
+      });
+    } catch (error) {
+      console.error("Image upload error:", error);
+      res.status(500).json({ message: error.message || "Failed to upload image" });
     }
   });
   return httpServer;

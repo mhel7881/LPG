@@ -1,20 +1,25 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
 import { useAuth } from "@/hooks/use-auth";
 import { useCart } from "@/hooks/use-cart";
+import { getAuthHeaders } from "@/lib/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Flame, 
-  Moon, 
-  Sun, 
-  ShoppingCart, 
-  Bell, 
-  Home, 
-  Package, 
-  Settings, 
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Trash2 } from "lucide-react";
+import {
+  Flame,
+  Moon,
+  Sun,
+  ShoppingCart,
+  Bell,
+  Home,
+  Package,
+  Settings,
   LogIn,
   User,
   Menu,
@@ -31,6 +36,52 @@ export function Navigation() {
   const { items } = useCart();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Fetch notifications for badge count
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["/api/notifications"],
+    queryFn: async () => {
+      const response = await fetch("/api/notifications", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch notifications");
+      return response.json();
+    },
+    enabled: !!user, // Only fetch if user is logged in
+  });
+
+  const unreadNotificationsCount = notifications.filter((n: any) => !n.read).length;
+
+  // Mark notification as read
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to mark notification as read");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+
+  // Delete notification
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to delete notification");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -214,9 +265,100 @@ export function Navigation() {
                   </Button>
                 </Link>
               )}
-              <Button variant="ghost" size="icon" data-testid="button-notifications">
-                <Bell className="h-4 w-4" />
-              </Button>
+              <Link href="/customer/profile?tab=notifications" data-testid="link-notifications">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
+                      <Bell className="h-4 w-4" />
+                      {unreadNotificationsCount > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                          data-testid="badge-notification-count"
+                        >
+                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-80">
+                    <div className="flex items-center justify-between p-2">
+                      <h4 className="font-medium">Notifications</h4>
+                      {unreadNotificationsCount > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {unreadNotificationsCount} new
+                        </Badge>
+                      )}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <ScrollArea className="h-80">
+                      {notifications.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No notifications
+                        </div>
+                      ) : (
+                        notifications.map((notification: any) => (
+                          <DropdownMenuItem
+                            key={notification.id}
+                            className={`flex flex-col items-start p-3 cursor-pointer ${
+                              !notification.read ? 'bg-blue-50 dark:bg-blue-950/20' : ''
+                            }`}
+                            onClick={(e) => {
+                              // Prevent click if clicking on delete button
+                              if ((e.target as HTMLElement).closest('[data-delete-button]')) {
+                                return;
+                              }
+                              if (!notification.read) {
+                                markAsReadMutation.mutate(notification.id);
+                              }
+                            }}
+                          >
+                            <div className="flex items-start justify-between w-full">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium">{notification.title}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {notification.message}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {new Date(notification.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2 ml-2">
+                                {!notification.read && (
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteNotificationMutation.mutate(notification.id);
+                                  }}
+                                  disabled={deleteNotificationMutation.isPending}
+                                  data-delete-button
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        ))
+                      )}
+                    </ScrollArea>
+                    {notifications.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <Link href="/customer/profile?tab=notifications" className="w-full text-center">
+                            View all notifications
+                          </Link>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Link>
               <Avatar className="h-8 w-8" data-testid="avatar-user">
                 <AvatarFallback className="bg-primary text-primary-foreground">
                   {user.name.slice(0, 2).toUpperCase()}
@@ -386,9 +528,98 @@ export function Navigation() {
               </Button>
             </Link>
           )}
-          <Button variant="ghost" size="icon" data-testid="button-desktop-notifications">
-            <Bell className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative" data-testid="button-desktop-notifications">
+                <Bell className="h-4 w-4" />
+                {unreadNotificationsCount > 0 && (
+                  <Badge
+                    variant="destructive"
+                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                    data-testid="badge-desktop-notification-count"
+                  >
+                    {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <div className="flex items-center justify-between p-2">
+                <h4 className="font-medium">Notifications</h4>
+                {unreadNotificationsCount > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {unreadNotificationsCount} new
+                  </Badge>
+                )}
+              </div>
+              <DropdownMenuSeparator />
+              <ScrollArea className="h-80">
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No notifications
+                  </div>
+                ) : (
+                  notifications.map((notification: any) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      className={`flex flex-col items-start p-3 cursor-pointer ${
+                        !notification.read ? 'bg-blue-50 dark:bg-blue-950/20' : ''
+                      }`}
+                      onClick={(e) => {
+                        // Prevent click if clicking on delete button
+                        if ((e.target as HTMLElement).closest('[data-delete-button]')) {
+                          return;
+                        }
+                        if (!notification.read) {
+                          markAsReadMutation.mutate(notification.id);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start justify-between w-full">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{notification.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {notification.message}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(notification.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2 ml-2">
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotificationMutation.mutate(notification.id);
+                            }}
+                            disabled={deleteNotificationMutation.isPending}
+                            data-delete-button
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </ScrollArea>
+              {notifications.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/customer/profile?tab=notifications" className="w-full text-center">
+                      View all notifications
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"

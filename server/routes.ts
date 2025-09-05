@@ -4,18 +4,19 @@ import { WebSocketServer, WebSocket } from "ws";
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import multer from "multer";
 import { storage } from "./storage";
 import { emailService } from "./email-service";
 import { loginSchema, insertUserSchema, insertOrderSchema, insertAddressSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
-import { 
-  generalLimiter, 
-  authLimiter, 
-  orderLimiter, 
-  posLimiter, 
-  securityHeaders, 
-  sanitizeInput, 
-  requestLogger 
+import {
+  generalLimiter,
+  authLimiter,
+  orderLimiter,
+  posLimiter,
+  securityHeaders,
+  sanitizeInput,
+  requestLogger
 } from "./middleware/security";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
@@ -501,14 +502,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const updates = req.body;
       const product = await storage.updateProduct(id, updates);
-      
+
       if (!product) {
         return res.status(404).json({ message: 'Product not found' });
       }
-      
+
       res.json(product);
     } catch (error) {
       res.status(400).json({ message: 'Failed to update product' });
+    }
+  });
+
+  app.delete('/api/products/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      console.log('DELETE route called for product:', id);
+
+      const product = await storage.getProduct(id);
+      console.log('Product lookup result:', product);
+
+      if (!product) {
+        console.log('Product not found');
+        return res.status(404).json({ message: 'Product not found' });
+      }
+
+      console.log('Calling storage.deleteProduct');
+      const success = await storage.deleteProduct(id);
+      console.log('Storage delete result:', success);
+
+      if (!success) {
+        console.log('Storage delete returned false');
+        return res.status(500).json({ message: 'Failed to delete product' });
+      }
+
+      console.log('Delete successful');
+      res.json({ message: 'Product deleted successfully' });
+    } catch (error) {
+      console.error('Route error:', error);
+      res.status(500).json({ message: 'Failed to delete product' });
     }
   });
 
@@ -824,14 +855,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const success = await storage.markNotificationAsRead(id);
-      
+
       if (!success) {
         return res.status(404).json({ message: 'Notification not found' });
       }
-      
+
       res.json({ message: 'Notification marked as read' });
     } catch (error) {
       res.status(400).json({ message: 'Failed to mark notification as read' });
+    }
+  });
+
+  app.delete('/api/notifications/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteNotification(id, req.user.id);
+
+      if (!success) {
+        return res.status(404).json({ message: 'Notification not found or not authorized to delete' });
+      }
+
+      res.json({ message: 'Notification deleted successfully' });
+    } catch (error) {
+      res.status(400).json({ message: 'Failed to delete notification' });
     }
   });
 
@@ -977,6 +1023,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(filteredUsers);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Image upload endpoint
+  const upload = multer({
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'));
+      }
+    },
+  });
+
+  app.post('/api/upload/image', authenticateToken, upload.single('file'), async (req: any, res: any) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+
+      // Upload to Supabase Storage
+      const { createClient } = await import('@supabase/supabase-js');
+
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error('Supabase configuration missing');
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      // Generate unique filename
+      const fileExt = req.file.originalname.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+      // Upload file to Supabase bucket
+      const { data, error } = await supabase.storage
+        .from('images')
+        .upload(fileName, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false
+        });
+
+      if (error) {
+        console.error('Supabase upload error:', error);
+        throw new Error('Failed to upload image to storage');
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName);
+
+      if (!urlData.publicUrl) {
+        throw new Error('Failed to get public URL');
+      }
+
+      res.json({
+        message: 'Image uploaded successfully',
+        imageUrl: urlData.publicUrl,
+        filename: fileName,
+        size: req.file.size
+      });
+    } catch (error: any) {
+      console.error('Image upload error:', error);
+      res.status(500).json({ message: error.message || 'Failed to upload image' });
     }
   });
 

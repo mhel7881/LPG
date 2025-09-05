@@ -14,12 +14,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useGeolocation, GeolocationPosition } from "@/hooks/use-geolocation";
+import { useLocation } from "wouter";
 import Map from "@/components/map";
-import { 
-  User, 
-  MapPin, 
-  Plus, 
-  Edit, 
+import {
+  User,
+  MapPin,
+  Plus,
+  Edit,
   Trash2,
   Bell,
   Shield,
@@ -75,6 +76,7 @@ interface Address {
 }
 
 export default function CustomerProfile() {
+  const [location] = useLocation();
   const [isAddingAddress, setIsAddingAddress] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [showLocationCapture, setShowLocationCapture] = useState(false);
@@ -86,6 +88,10 @@ export default function CustomerProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { position, error, loading, getCurrentPosition } = useGeolocation();
+
+  // Parse query parameters to determine active tab
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const activeTab = urlParams.get('tab') || 'profile';
 
   const { data: addresses = [], isLoading: addressesLoading } = useQuery({
     queryKey: ["/api/users/addresses"],
@@ -106,6 +112,32 @@ export default function CustomerProfile() {
       });
       if (!response.ok) throw new Error("Failed to fetch notifications");
       return response.json();
+    },
+  });
+
+  // Delete notification mutation
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to delete notification");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      toast({
+        title: "Notification Deleted",
+        description: "The notification has been removed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete notification",
+        variant: "destructive",
+      });
     },
   });
 
@@ -420,7 +452,7 @@ export default function CustomerProfile() {
         </div>
 
         {/* Profile Tabs */}
-        <Tabs defaultValue="profile" className="space-y-6">
+        <Tabs defaultValue={activeTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile" data-testid="tab-profile">Profile</TabsTrigger>
             <TabsTrigger value="addresses" data-testid="tab-addresses">Addresses</TabsTrigger>
@@ -923,45 +955,106 @@ export default function CustomerProfile() {
 
           {/* Notifications Tab */}
           <TabsContent value="notifications">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Bell className="h-4 w-4 mr-2" />
-                  Notification Preferences
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Order Updates</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified about order status changes
-                    </p>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Notifications
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {notifications.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="font-semibold mb-2">No notifications</h3>
+                      <p className="text-muted-foreground">
+                        You don't have any notifications at the moment.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {notifications.map((notification: any) => (
+                        <div
+                          key={notification.id}
+                          className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                            !notification.read ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800' : ''
+                          }`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium">{notification.title}</h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {notification.message}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  {new Date(notification.createdAt).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2 ml-4">
+                                {!notification.read && (
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteNotificationMutation.mutate(notification.id)}
+                                  disabled={deleteNotificationMutation.isPending}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Notification Preferences
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Order Updates</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Get notified about order status changes
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-order-notifications" />
                   </div>
-                  <Switch defaultChecked data-testid="switch-order-notifications" />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Promotions</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receive special offers and promotions
-                    </p>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Promotions</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Receive special offers and promotions
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-promo-notifications" />
                   </div>
-                  <Switch defaultChecked data-testid="switch-promo-notifications" />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Delivery Reminders</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get reminded about scheduled deliveries
-                    </p>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Delivery Reminders</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Get reminded about scheduled deliveries
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-delivery-notifications" />
                   </div>
-                  <Switch defaultChecked data-testid="switch-delivery-notifications" />
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Security Tab */}

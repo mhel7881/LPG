@@ -121,12 +121,12 @@ export default function CustomerDashboard() {
       <motion.section
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-primary to-primary/80 rounded-xl p-6 text-primary-foreground"
+        className="bg-primary rounded-xl p-6 text-primary-foreground"
       >
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold mb-2" data-testid="text-welcome-message">
-              Welcome back, {user?.name}!
+              Welcome back, jayar!
             </h1>
             <p className="text-primary-foreground/80 mb-4">
               Need LPG? Order now for fast delivery to your doorstep
