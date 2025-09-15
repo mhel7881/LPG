@@ -410,9 +410,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         userId: req.user.id,
       });
+      console.log('[Address Creation] Creating address with data:', {
+        userId: req.user.id,
+        label: addressData.label,
+        street: addressData.street,
+        city: addressData.city,
+        coordinates: addressData.coordinates,
+        hasCoordinates: !!addressData.coordinates
+      });
       const address = await storage.createAddress(addressData);
+      console.log('[Address Creation] Address created successfully:', {
+        id: address.id,
+        coordinates: address.coordinates
+      });
       res.status(201).json(address);
     } catch (error) {
+      console.error('[Address Creation] Error creating address:', error);
       res.status(400).json({ message: 'Invalid address data' });
     }
   });
@@ -685,8 +698,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/admin/addresses', authenticateToken, requireAdmin, async (req: any, res) => {
     try {
       const addresses = await storage.getAllAddressesWithUsers();
+      console.log('[Admin Addresses] Fetched addresses count:', addresses.length);
+      addresses.forEach((addr, index) => {
+        console.log(`[Admin Addresses] Address ${index + 1}:`, {
+          id: addr.id,
+          user: addr.user.name,
+          coordinates: addr.coordinates,
+          hasCoordinates: !!addr.coordinates
+        });
+      });
       res.json(addresses);
     } catch (error) {
+      console.error('[Admin Addresses] Error fetching addresses:', error);
       res.status(500).json({ message: 'Failed to fetch addresses' });
     }
   });
@@ -694,8 +717,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/admin/orders/tracking', authenticateToken, requireAdmin, async (req: any, res) => {
     try {
       const orders = await storage.getOrdersWithLocationData();
+      console.log('[Admin Orders Tracking] Fetched orders with location data count:', orders.length);
+      orders.forEach((order, index) => {
+        console.log(`[Admin Orders Tracking] Order ${index + 1}:`, {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customer: order.customer.name,
+          addressCoordinates: order.address?.coordinates,
+          hasCoordinates: !!order.address?.coordinates
+        });
+      });
       res.json(orders);
     } catch (error) {
+      console.error('[Admin Orders Tracking] Error fetching orders:', error);
       res.status(500).json({ message: 'Failed to fetch orders for tracking' });
     }
   });
@@ -1050,17 +1084,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const supabaseUrl = process.env.SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
+      console.log('Supabase URL:', supabaseUrl);
+      console.log('Supabase Key exists:', !!supabaseKey);
+
       if (!supabaseUrl || !supabaseKey) {
         throw new Error('Supabase configuration missing');
       }
 
       const supabase = createClient(supabaseUrl, supabaseKey);
+      console.log('Supabase client created successfully');
 
       // Generate unique filename
       const fileExt = req.file.originalname.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
+      console.log('File details:', {
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        generatedFileName: fileName
+      });
+
       // Upload file to Supabase bucket
+      console.log('Attempting to upload to bucket: images');
       const { data, error } = await supabase.storage
         .from('images')
         .upload(fileName, req.file.buffer, {
@@ -1068,9 +1114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           upsert: false
         });
 
+      console.log('Upload result:', { data, error });
+
       if (error) {
         console.error('Supabase upload error:', error);
-        throw new Error('Failed to upload image to storage');
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        throw new Error(`Failed to upload image to storage: ${error.message}`);
       }
 
       // Get public URL

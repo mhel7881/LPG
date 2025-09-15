@@ -147,14 +147,37 @@ export default function CustomerProducts() {
                   {/* Product Image */}
                   <div className="w-full h-48 bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
                     {product.image ? (
-                      <img 
-                        src={product.image} 
+                      <img
+                        src={product.image}
                         alt={product.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          // Show fallback image
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.fallback-image')) {
+                            const fallback = document.createElement('img');
+                            fallback.src = '/solane-tank.png';
+                            fallback.alt = product.name;
+                            fallback.className = 'fallback-image w-full h-full object-contain p-4';
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                        onLoad={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'block';
+                          // Remove any fallback image
+                          const parent = target.parentElement;
+                          const fallback = parent?.querySelector('.fallback-image');
+                          if (fallback) {
+                            fallback.remove();
+                          }
+                        }}
                       />
                     ) : (
-                      <img 
-                        src="/solane-tank.png" 
+                      <img
+                        src="/solane-tank.png"
                         alt={product.name}
                         className="w-full h-full object-contain p-4"
                       />

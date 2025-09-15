@@ -275,7 +275,7 @@ export default function AdminPOS() {
                             {product.stock} in stock
                           </Badge>
                         </div>
-                        
+
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-sm">
                             <span>New Tank:</span>
@@ -288,8 +288,8 @@ export default function AdminPOS() {
                         </div>
 
                         <div className="flex space-x-2 mt-4">
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             className="flex-1"
                             onClick={() => addToCart(product, "new")}
                             disabled={product.stock === 0}
@@ -298,9 +298,9 @@ export default function AdminPOS() {
                             <Plus className="h-4 w-4 mr-1" />
                             New
                           </Button>
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
+                          <Button
+                            size="sm"
+                            variant="outline"
                             className="flex-1"
                             onClick={() => addToCart(product, "swap")}
                             disabled={product.stock === 0}
@@ -353,7 +353,7 @@ export default function AdminPOS() {
                           ₱{(item.subtotal / item.quantity).toFixed(2)} each
                         </p>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Button
                           size="sm"
@@ -504,7 +504,7 @@ export default function AdminPOS() {
                     ₱{calculateTotal().toFixed(2)}
                   </span>
                 </div>
-                
+
                 <Button
                   className="w-full"
                   size="lg"

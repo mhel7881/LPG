@@ -32,6 +32,8 @@ export default function EmailVerificationPage() {
         if (response.ok) {
           const data = await response.json();
           setIsVerified(true);
+          // Clear the stored email since verification is successful
+          localStorage.removeItem('pendingVerificationEmail');
           toast({
             title: "Email Verified!",
             description: "Your email has been successfully verified. You can now log in.",
@@ -53,12 +55,49 @@ export default function EmailVerificationPage() {
   }, [search, toast]);
 
   const handleResendVerification = async () => {
-    // This would typically require the user's email
-    // For now, we'll just show a message
-    toast({
-      title: "Resend Verification",
-      description: "Please contact support to resend verification email.",
-    });
+    // Get email from localStorage (set during registration/login)
+    const email = localStorage.getItem('pendingVerificationEmail');
+
+    if (!email) {
+      toast({
+        title: "Email Required",
+        description: "Please log in again to resend verification email.",
+        variant: "destructive",
+      });
+      setLocation('/login');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Verification Email Sent",
+          description: "Please check your email for the verification link.",
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to resend verification email' }));
+        toast({
+          title: "Resend Failed",
+          description: errorData.message || "Failed to resend verification email.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      toast({
+        title: "Network Error",
+        description: "Please try again later.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

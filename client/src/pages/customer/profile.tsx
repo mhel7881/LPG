@@ -27,7 +27,9 @@ import {
   LogOut,
   Navigation,
   Loader2,
-  X
+  X,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 const addressSchema = z.object({
@@ -84,10 +86,13 @@ export default function CustomerProfile() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [enable2FA, setEnable2FA] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { position, error, loading, getCurrentPosition } = useGeolocation();
+  const { position, error, loading, geocoding, address, getCurrentPosition } = useGeolocation();
 
   // Parse query parameters to determine active tab
   const urlParams = new URLSearchParams(location.split('?')[1] || '');
@@ -187,7 +192,46 @@ export default function CustomerProfile() {
     }
   }, [position, showLocationCapture, addressForm, toast]);
 
-  // Handle geolocation errors
+  // Update form when geocoding is completed
+  useEffect(() => {
+    if (address && !geocoding && capturedLocation) {
+      console.log('[Profile] Populating address form with geocoded data:', address);
+
+      // Auto-populate address fields
+      if (address.street) {
+        addressForm.setValue("street", address.street);
+      }
+      if (address.city) {
+        addressForm.setValue("city", address.city);
+      }
+      if (address.province) {
+        addressForm.setValue("province", address.province);
+      }
+      if (address.zipCode) {
+        addressForm.setValue("zipCode", address.zipCode);
+      }
+
+      toast({
+        title: "Address Found",
+        description: address.formattedAddress || "Address has been populated from your location",
+      });
+    }
+  }, [address, geocoding, capturedLocation, addressForm, toast]);
+
+  // Handle geocoding failure but keep coordinates
+  useEffect(() => {
+    if (error && error.code === -1 && capturedLocation && !address) {
+      console.log('[Profile] Geocoding failed but coordinates captured');
+
+      toast({
+        title: "Location Captured",
+        description: "Coordinates saved, but address conversion failed. Please enter your address details manually.",
+        variant: "default",
+      });
+    }
+  }, [error, capturedLocation, address, toast]);
+
+  // Handle geolocation and geocoding errors
   useEffect(() => {
     if (error) {
       setShowLocationCapture(false);
@@ -205,6 +249,9 @@ export default function CustomerProfile() {
       } else if (error.code === 3) { // TIMEOUT
         errorMessage = "Location request timed out. Please try again.";
         errorTitle = "Location Timeout";
+      } else if (error.code === -1) { // Geocoding error
+        errorTitle = "Address Conversion Failed";
+        // Keep the original message for geocoding errors
       }
 
       toast({
@@ -326,15 +373,24 @@ export default function CustomerProfile() {
     addressForm.reset();
   };
 
-  const handleCaptureLocation = () => {
+  const handleCaptureLocation = async () => {
     // Clear any previous captured location
     setCapturedLocation(null);
     setShowLocationCapture(true);
 
-    // Small delay to ensure state is updated before making the request
-    setTimeout(() => {
-      getCurrentPosition();
-    }, 100);
+    try {
+      // Get current position and geocode - browser will automatically ask for permission
+      const addressResult = await getCurrentPosition();
+
+      if (addressResult) {
+        console.log('[Profile] Location and address captured successfully');
+      } else {
+        console.log('[Profile] Location captured but geocoding failed');
+      }
+    } catch (error) {
+      console.error('[Profile] Error capturing location:', error);
+      setShowLocationCapture(false);
+    }
   };
 
   const handleLocationSelect = (position: GeolocationPosition) => {
@@ -680,7 +736,7 @@ export default function CustomerProfile() {
                           <div className="border-t pt-4">
                             <Label className="text-base font-medium">Location (Optional)</Label>
                             <p className="text-sm text-muted-foreground mb-3">
-                              Add GPS coordinates to help with accurate deliveries
+                              Use your current location to automatically fill in your address details for accurate deliveries
                             </p>
                             
                             <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-3">
@@ -688,29 +744,45 @@ export default function CustomerProfile() {
                                 type="button"
                                 variant="outline"
                                 onClick={handleCaptureLocation}
-                                disabled={loading}
+                                disabled={loading || geocoding}
                                 className="flex-1"
                                 data-testid="button-capture-location"
                               >
-                                {loading ? (
+                                {(loading || geocoding) ? (
                                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                 ) : (
                                   <Navigation className="h-4 w-4 mr-2" />
                                 )}
-                                {loading ? "Getting Location..." : "Use Current Location"}
+                                {loading ? "Getting Location..." : geocoding ? "Converting to Address..." : "Use Current Location"}
                               </Button>
 
-                              {capturedLocation && (
+                              {capturedLocation && !geocoding && (
                                 <div className="flex-1 px-3 py-2 bg-muted rounded-md text-sm">
-                                  <strong>Captured:</strong> {capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}
+                                  <strong>Location Captured:</strong> {capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}
+                                  {address && <div className="text-green-600 mt-1">✓ Address populated</div>}
+                                  {!address && error && error.code === -1 && (
+                                    <div className="text-orange-600 mt-1">
+                                      ⚠️ Address conversion failed
+                                      <Button
+                                        type="button"
+                                        variant="link"
+                                        size="sm"
+                                        className="h-auto p-0 ml-2 text-orange-600 hover:text-orange-700"
+                                        onClick={handleCaptureLocation}
+                                      >
+                                        Try again
+                                      </Button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
 
                             {/* Location Permission Help */}
                             <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
-                              <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">💡 Location Permission Required</p>
-                              <p>If location access is denied, try these steps:</p>
+                              <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">📍 Smart Address Detection</p>
+                              <p>Your current location will be automatically converted to a complete address including street, city, province, and postal code.</p>
+                              <p className="mt-2 font-medium">Location Permission Required:</p>
                               <ul className="list-disc list-inside mt-1 space-y-1">
                                 <li>Click "Allow" when your browser asks for location permission</li>
                                 <li>Click the lock/info icon in the address bar and allow location</li>
@@ -718,7 +790,8 @@ export default function CustomerProfile() {
                                 <li>Try refreshing the page and clicking the button again</li>
                               </ul>
                               <p className="mt-2 text-xs font-medium">💡 Tip: If you accidentally clicked "Block", refresh the page to try again.</p>
-                              <p className="mt-1 text-xs">Alternatively, you can manually enter coordinates below.</p>
+                              <p className="mt-1 text-xs text-green-700 dark:text-green-300">✅ If address conversion fails, coordinates are still saved - just manually enter your address details.</p>
+                              <p className="mt-1 text-xs">You can also manually enter coordinates below if needed.</p>
                             </div>
 
                             {/* Manual Coordinate Entry */}
@@ -1092,13 +1165,30 @@ export default function CustomerProfile() {
                       <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
                         <div>
                           <Label htmlFor="current-password">Current Password</Label>
-                          <Input
-                            id="current-password"
-                            type="password"
-                            placeholder="Enter your current password"
-                            {...passwordForm.register("currentPassword")}
-                            data-testid="input-current-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="current-password"
+                              type={showCurrentPassword ? "text" : "password"}
+                              placeholder="Enter your current password"
+                              className="pr-12"
+                              {...passwordForm.register("currentPassword")}
+                              data-testid="input-current-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                              data-testid="button-toggle-current-password"
+                            >
+                              {showCurrentPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.currentPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.currentPassword.message}
@@ -1107,13 +1197,30 @@ export default function CustomerProfile() {
                         </div>
                         <div>
                           <Label htmlFor="new-password">New Password</Label>
-                          <Input
-                            id="new-password"
-                            type="password"
-                            placeholder="Enter your new password"
-                            {...passwordForm.register("newPassword")}
-                            data-testid="input-new-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="new-password"
+                              type={showNewPassword ? "text" : "password"}
+                              placeholder="Enter your new password"
+                              className="pr-12"
+                              {...passwordForm.register("newPassword")}
+                              data-testid="input-new-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              data-testid="button-toggle-new-password"
+                            >
+                              {showNewPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.newPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.newPassword.message}
@@ -1122,13 +1229,30 @@ export default function CustomerProfile() {
                         </div>
                         <div>
                           <Label htmlFor="confirm-password">Confirm New Password</Label>
-                          <Input
-                            id="confirm-password"
-                            type="password"
-                            placeholder="Confirm your new password"
-                            {...passwordForm.register("confirmPassword")}
-                            data-testid="input-confirm-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="confirm-password"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="Confirm your new password"
+                              className="pr-12"
+                              {...passwordForm.register("confirmPassword")}
+                              data-testid="input-confirm-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              data-testid="button-toggle-confirm-password"
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.confirmPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.confirmPassword.message}

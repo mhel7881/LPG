@@ -4,6 +4,17 @@ import { Button } from '@/components/ui/button';
 import { MapPin, Navigation, RefreshCw } from 'lucide-react';
 import { GeolocationPosition } from '@/hooks/use-geolocation';
 
+// Dynamic import for Leaflet to avoid SSR issues
+let L: any = null;
+if (typeof window !== 'undefined') {
+  Promise.all([
+    import('leaflet'),
+    import('leaflet/dist/leaflet.css')
+  ]).then(([leaflet]) => {
+    L = leaflet.default;
+  });
+}
+
 interface MapProps {
   center?: GeolocationPosition;
   markers?: Array<{
@@ -19,40 +30,107 @@ interface MapProps {
 
 export default function Map({ center, markers = [], onLocationSelect, onMarkerClick, className }: MapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  // For now, we'll use a simple visual map representation
-  // In production, you would integrate with Google Maps, Mapbox, or OpenStreetMap
-  useEffect(() => {
-    // Simulate map loading
-    const timer = setTimeout(() => {
-      setIsMapLoaded(true);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
   const defaultCenter = center || { latitude: 14.5995, longitude: 120.9842 }; // Manila, Philippines
 
-  const handleLocationClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (onMarkerClick && markers.length === 1) {
-      onMarkerClick(markers[0].id);
-      return;
+  // Initialize Leaflet map
+  useEffect(() => {
+    if (!mapRef.current || !L) return;
+
+    try {
+      // Initialize map
+      const map = L.map(mapRef.current).setView([defaultCenter.latitude, defaultCenter.longitude], 13);
+
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      leafletMapRef.current = map;
+      setIsMapLoaded(true);
+
+      // Handle map clicks for location selection
+      if (onLocationSelect) {
+        map.on('click', (e: any) => {
+          const { lat, lng } = e.latlng;
+          onLocationSelect({ latitude: lat, longitude: lng });
+        });
+      }
+
+      return () => {
+        map.remove();
+        leafletMapRef.current = null;
+      };
+    } catch (error) {
+      console.error('Failed to initialize map:', error);
+      setMapError('Failed to load map. Please refresh the page.');
     }
+  }, [defaultCenter.latitude, defaultCenter.longitude, onLocationSelect]);
 
-    if (!onLocationSelect) return;
+  // Update map center when center prop changes
+  useEffect(() => {
+    if (leafletMapRef.current && center) {
+      leafletMapRef.current.setView([center.latitude, center.longitude], 13);
+    }
+  }, [center]);
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  // Update markers
+  useEffect(() => {
+    if (!leafletMapRef.current || !isMapLoaded) return;
 
-    // Convert click position to approximate coordinates (this is simplified)
-    const lat = defaultCenter.latitude + (0.01 * (y - rect.height / 2) / (rect.height / 2));
-    const lng = defaultCenter.longitude + (0.01 * (x - rect.width / 2) / (rect.width / 2));
+    const map = leafletMapRef.current;
 
-    onLocationSelect({ latitude: lat, longitude: lng });
-  }, [onMarkerClick, markers, onLocationSelect, defaultCenter]);
+    // Clear existing markers
+    markersRef.current.forEach((marker: any) => {
+      map.removeLayer(marker);
+    });
+    markersRef.current = [];
+
+    // Add new markers
+    markers.forEach((marker) => {
+      const getMarkerIcon = (type: string) => {
+        const iconHtml = type === 'customer'
+          ? '<div style="background-color: #3b82f6; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center;"><div style="width: 8px; height: 8px; background-color: white; border-radius: 50%;"></div></div>'
+          : type === 'delivery'
+          ? '<div style="background-color: #10b981; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center;"><div style="width: 8px; height: 8px; background-color: white; border-radius: 50%;"></div></div>'
+          : '<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center;"><div style="width: 8px; height: 8px; background-color: white; border-radius: 50%;"></div></div>';
+
+        return L.divIcon({
+          html: iconHtml,
+          className: 'custom-marker',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
+        });
+      };
+
+      const leafletMarker = L.marker([marker.position.latitude, marker.position.longitude], {
+        icon: getMarkerIcon(marker.type)
+      }).addTo(map);
+
+      // Add popup
+      leafletMarker.bindPopup(marker.title);
+
+      // Add click handler
+      if (onMarkerClick) {
+        leafletMarker.on('click', () => {
+          onMarkerClick(marker.id);
+        });
+      }
+
+      markersRef.current.push(leafletMarker);
+    });
+
+    // Fit bounds to show all markers if there are multiple
+    if (markers.length > 1) {
+      const group = new L.featureGroup(markersRef.current);
+      map.fitBounds(group.getBounds().pad(0.1));
+    }
+  }, [markers, isMapLoaded, onMarkerClick]);
 
   if (mapError) {
     return (
@@ -73,13 +151,13 @@ export default function Map({ center, markers = [], onLocationSelect, onMarkerCl
   return (
     <Card className={className}>
       <CardContent className="p-0">
-        <div 
+        <div
           ref={mapRef}
-          className="w-full h-64 md:h-96 bg-gradient-to-br from-green-100 to-blue-100 dark:from-green-900 dark:to-blue-900 relative rounded-lg overflow-hidden cursor-pointer"
-          onClick={handleLocationClick}
+          className="w-full h-64 md:h-96 rounded-lg overflow-hidden"
+          style={{ background: '#f8f9fa' }}
         >
           {!isMapLoaded ? (
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
               <div className="text-center">
                 <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                 <p className="text-sm text-muted-foreground">Loading map...</p>
@@ -87,66 +165,8 @@ export default function Map({ center, markers = [], onLocationSelect, onMarkerCl
             </div>
           ) : (
             <>
-              {/* Map Grid Pattern */}
-              <div className="absolute inset-0 opacity-20">
-                <div className="grid grid-cols-8 grid-rows-6 h-full">
-                  {Array.from({ length: 48 }).map((_, i) => (
-                    <div key={i} className="border border-muted-foreground/20"></div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Center Marker */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                <div className="w-4 h-4 bg-primary rounded-full border-2 border-white shadow-lg"></div>
-              </div>
-
-              {/* Custom Markers */}
-              {markers.map((marker, index) => {
-                const getMarkerColor = (type: string) => {
-                  switch (type) {
-                    case 'customer': return 'bg-blue-500';
-                    case 'delivery': return 'bg-green-500';
-                    case 'destination': return 'bg-red-500';
-                    default: return 'bg-gray-500';
-                  }
-                };
-
-                // Simple positioning based on relative coordinates
-                const offsetX = (marker.position.longitude - defaultCenter.longitude) * 50;
-                const offsetY = -(marker.position.latitude - defaultCenter.latitude) * 50;
-                
-                return (
-                  <div
-                    key={marker.id}
-                    className="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer"
-                    style={{
-                      left: `calc(50% + ${Math.max(-120, Math.min(120, offsetX))}px)`,
-                      top: `calc(50% + ${Math.max(-80, Math.min(80, offsetY))}px)`
-                    }}
-                    onClick={() => onMarkerClick?.(marker.id)}
-                  >
-                    <div className={`w-6 h-6 ${getMarkerColor(marker.type)} rounded-full border-2 border-white shadow-lg flex items-center justify-center`}>
-                      <div className="w-2 h-2 bg-white rounded-full"></div>
-                    </div>
-                    <div className="absolute top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-                      <div className="bg-white dark:bg-gray-800 px-2 py-1 rounded shadow-lg text-xs font-medium">
-                        {marker.title}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Map Controls */}
-              <div className="absolute top-4 right-4 space-y-2">
-                <Button size="sm" variant="secondary" className="shadow-lg">
-                  <Navigation className="h-4 w-4" />
-                </Button>
-              </div>
-
               {/* Map Legend */}
-              <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3">
+              <div className="absolute top-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 z-[1000]">
                 <div className="text-xs font-medium mb-2">Map Legend</div>
                 <div className="space-y-1 text-xs">
                   <div className="flex items-center space-x-2">
@@ -165,7 +185,7 @@ export default function Map({ center, markers = [], onLocationSelect, onMarkerCl
               </div>
 
               {/* Coordinates Display */}
-              <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2">
+              <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 z-[1000]">
                 <div className="text-xs text-muted-foreground">
                   {defaultCenter.latitude.toFixed(4)}, {defaultCenter.longitude.toFixed(4)}
                 </div>

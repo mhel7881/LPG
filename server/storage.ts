@@ -882,39 +882,6 @@ export class DrizzleStorage implements IStorage {
       });
     }
 
-    // Create sample products
-    const existingProducts = await this.getProducts();
-    if (existingProducts.length === 0) {
-      await this.createProduct({
-        name: '7kg LPG Tank',
-        description: 'Compact tank ideal for small families',
-        weight: '7kg',
-        newPrice: '950.00',
-        swapPrice: '650.00',
-        stock: 8,
-        isActive: true,
-      });
-
-      await this.createProduct({
-        name: '11kg LPG Tank',
-        description: 'Premium quality LPG tank perfect for home cooking',
-        weight: '11kg',
-        newPrice: '1200.00',
-        swapPrice: '900.00',
-        stock: 45,
-        isActive: true,
-      });
-
-      await this.createProduct({
-        name: '22kg LPG Tank',
-        description: 'Heavy-duty tank for commercial use',
-        weight: '22kg',
-        newPrice: '2400.00',
-        swapPrice: '1800.00',
-        stock: 2,
-        isActive: true,
-      });
-    }
   }
 }
 

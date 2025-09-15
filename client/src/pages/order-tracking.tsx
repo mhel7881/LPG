@@ -9,12 +9,13 @@ import { Progress } from "@/components/ui/progress";
 import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useGeolocation, GeolocationPosition } from "@/hooks/use-geolocation";
+import { useWebSocket } from "@/hooks/use-websocket";
 import Map from "@/components/map";
-import { 
+import {
   ArrowLeft,
-  Package, 
-  MapPin, 
-  MessageSquare, 
+  Package,
+  MapPin,
+  MessageSquare,
   Clock,
   CheckCircle,
   Truck,
@@ -60,7 +61,10 @@ export default function OrderTracking() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [refreshing, setRefreshing] = useState(false);
+  const [deliveryLocation, setDeliveryLocation] = useState<GeolocationPosition | null>(null);
+  const [lastLocationUpdate, setLastLocationUpdate] = useState<Date | null>(null);
   const { position: currentLocation, getCurrentPosition } = useGeolocation();
+  const { isConnected, sendMessage, lastMessage } = useWebSocket();
 
   const { data: order, isLoading, refetch } = useQuery<Order>({
     queryKey: [`/api/orders/${orderId}`],
@@ -84,6 +88,53 @@ export default function OrderTracking() {
     // Get current location when component mounts
     getCurrentPosition();
   }, [getCurrentPosition]);
+
+  // Handle WebSocket messages for real-time location updates
+  useEffect(() => {
+    if (lastMessage) {
+      switch (lastMessage.type) {
+        case "delivery_location_update":
+          if (lastMessage.orderId === orderId) {
+            setDeliveryLocation({
+              latitude: lastMessage.location.lat,
+              longitude: lastMessage.location.lng
+            });
+            setLastLocationUpdate(new Date());
+            toast({
+              title: "Location Updated",
+              description: "Delivery person location updated",
+            });
+          }
+          break;
+        
+        case "order_status_update":
+          if (lastMessage.order.id === orderId) {
+            // Refetch order data when status updates
+            refetch();
+          }
+          break;
+      }
+    }
+  }, [lastMessage, orderId, toast, refetch]);
+
+  // Subscribe to location updates for this order
+  useEffect(() => {
+    if (isConnected && orderId && order?.status === "out_for_delivery") {
+      sendMessage({
+        type: "subscribe_delivery_tracking",
+        orderId: orderId
+      });
+    }
+
+    return () => {
+      if (isConnected && orderId) {
+        sendMessage({
+          type: "unsubscribe_delivery_tracking",
+          orderId: orderId
+        });
+      }
+    };
+  }, [isConnected, orderId, order?.status, sendMessage]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

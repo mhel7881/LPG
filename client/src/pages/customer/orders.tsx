@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { getAuthHeaders } from "@/lib/auth";
 import { generateReceiptPDF, type ReceiptData } from "@/lib/receipt-generator";
+import { useCart } from "@/hooks/use-cart";
+import { useToast } from "@/hooks/use-toast";
 import {
   Package,
   MapPin,
@@ -41,6 +43,8 @@ interface Order {
 
 export default function CustomerOrders() {
   const [, setLocation] = useLocation();
+  const { addItem, isLoading: cartLoading } = useCart();
+  const { toast } = useToast();
   const { data: orders = [], isLoading, refetch } = useQuery({
     queryKey: ["/api/orders"],
     queryFn: async () => {
@@ -108,6 +112,36 @@ export default function CustomerOrders() {
     } catch (error) {
       console.error('Error downloading receipt:', error);
       alert('Failed to download receipt. Please try again.');
+    }
+  };
+
+  const handleReorder = async (order: Order) => {
+    try {
+      if (!order.productId) {
+        toast({
+          title: "Error",
+          description: "Product information not available for reorder",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Add the item to cart with the same type and quantity
+      await addItem(order.productId, order.type as "new" | "swap", order.quantity);
+      
+      toast({
+        title: "Added to Cart",
+        description: `${order.product?.name} has been added to your cart`,
+      });
+
+      // Navigate to cart page
+      setLocation("/customer/cart");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add item to cart. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -303,13 +337,15 @@ export default function CustomerOrders() {
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
+                                onClick={() => handleReorder(order)}
+                                disabled={cartLoading}
                                 data-testid={`button-reorder-${order.id}`}
                               >
-                                <RefreshCcw className="h-4 w-4 mr-2" />
-                                Reorder
+                                <RefreshCcw className={`h-4 w-4 mr-2 ${cartLoading ? 'animate-spin' : ''}`} />
+                                {cartLoading ? 'Adding...' : 'Reorder'}
                               </Button>
                               <Button 
                                 size="sm" 
