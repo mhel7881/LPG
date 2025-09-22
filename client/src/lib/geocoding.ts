@@ -7,57 +7,60 @@ export interface GeocodingResult {
   formattedAddress?: string;
 }
 
-export interface OpenCageResponse {
-  results: Array<{
-    components: {
-      house_number?: string;
-      road?: string;
-      neighbourhood?: string;
-      suburb?: string;
-      city?: string;
-      town?: string;
-      village?: string;
-      state?: string;
-      province?: string;
-      postcode?: string;
-      country?: string;
-      country_code?: string;
-    };
-    formatted: string;
-  }>;
+export interface NominatimResponse {
+  address?: {
+    house_number?: string;
+    road?: string;
+    neighbourhood?: string;
+    suburb?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    state?: string;
+    province?: string;
+    postcode?: string;
+    country?: string;
+    country_code?: string;
+  };
+  display_name?: string;
 }
 
 export class GeocodingService {
-  private static readonly API_KEY = '42be5bc02adf415dbda2c79a71ff57e5';
-  private static readonly BASE_URL = 'https://api.opencagedata.com/geocode/v1/json';
+  private static readonly BASE_URL = 'https://nominatim.openstreetmap.org/reverse';
 
   static async reverseGeocode(latitude: number, longitude: number): Promise<GeocodingResult> {
     try {
-      const url = `${this.BASE_URL}?key=${this.API_KEY}&q=${latitude}%2C+${longitude}&pretty=1&no_annotations=1`;
+      // Add a small delay to respect Nominatim's usage policy
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const url = `${this.BASE_URL}?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=en`;
 
       console.log('[Geocoding] Making API request to:', url);
 
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'GasFlow-LPG-Delivery-App/1.0'
+        }
+      });
 
       if (!response.ok) {
         throw new Error(`Geocoding API error: ${response.status} ${response.statusText}`);
       }
 
-      const data: OpenCageResponse = await response.json();
+      const data: NominatimResponse = await response.json();
 
-      if (!data.results || data.results.length === 0) {
+      if (!data || !data.address) {
         throw new Error('No address found for these coordinates');
       }
 
-      const result = data.results[0];
-      const components = result.components;
+      const address = data.address;
 
       // Extract address components
-      const street = this.buildStreetAddress(components);
-      const city = components.city || components.town || components.village || '';
-      const province = components.state || components.province || '';
-      const zipCode = components.postcode || '';
-      const country = components.country || '';
+      const street = this.buildStreetAddress(address);
+      const city = address.city || address.town || address.village || '';
+      const province = address.state || address.province || '';
+      const zipCode = address.postcode || '';
+      const country = address.country || '';
 
       const geocodingResult: GeocodingResult = {
         street,
@@ -65,7 +68,7 @@ export class GeocodingService {
         province,
         zipCode,
         country,
-        formattedAddress: result.formatted
+        formattedAddress: data.display_name
       };
 
       console.log('[Geocoding] Successfully parsed address:', geocodingResult);
@@ -73,27 +76,43 @@ export class GeocodingService {
       return geocodingResult;
     } catch (error) {
       console.error('[Geocoding] Error:', error);
+
+      // For Philippines, provide fallback address components based on coordinates
+      if (latitude >= 4.5 && latitude <= 21.5 && longitude >= 116 && longitude <= 127) {
+        console.log('[Geocoding] Using fallback for Philippines coordinates');
+        return {
+          street: '',
+          city: 'Manila', // Default fallback
+          province: 'Metro Manila',
+          zipCode: '',
+          country: 'Philippines',
+          formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (Philippines)`
+        };
+      }
+
       throw error;
     }
   }
 
-  private static buildStreetAddress(components: OpenCageResponse['results'][0]['components']): string {
+  private static buildStreetAddress(address: NominatimResponse['address']): string {
+    if (!address) return '';
+
     const parts: string[] = [];
 
     // Add house number and road
-    if (components.house_number) {
-      parts.push(components.house_number);
+    if (address.house_number) {
+      parts.push(address.house_number);
     }
-    if (components.road) {
-      parts.push(components.road);
+    if (address.road) {
+      parts.push(address.road);
     }
 
     // Add neighbourhood/suburb if available and different from road
-    if (components.neighbourhood && components.neighbourhood !== components.road) {
-      parts.push(components.neighbourhood);
+    if (address.neighbourhood && address.neighbourhood !== address.road) {
+      parts.push(address.neighbourhood);
     }
-    if (components.suburb && components.suburb !== components.neighbourhood && components.suburb !== components.road) {
-      parts.push(components.suburb);
+    if (address.suburb && address.suburb !== address.neighbourhood && address.suburb !== address.road) {
+      parts.push(address.suburb);
     }
 
     return parts.join(', ');

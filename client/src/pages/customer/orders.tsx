@@ -260,7 +260,12 @@ export default function CustomerOrders() {
                             </div>
 
                             <div className="flex space-x-3">
-                              <Button size="sm" className="flex-1" data-testid={`button-track-order-${order.id}`}>
+                              <Button
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setLocation(`/order-tracking/${order.id}`)}
+                                data-testid={`button-track-order-${order.id}`}
+                              >
                                 <MapPin className="h-4 w-4 mr-2" />
                                 Track Order
                               </Button>

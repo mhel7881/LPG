@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocation Test</title>
+</head>
+<body>
+    <h1>Geolocation Test</h1>
+    <button id="test-btn">Test Geolocation</button>
+    <div id="result"></div>
+
+    <script>
+        const testBtn = document.getElementById('test-btn');
+        const resultDiv = document.getElementById('result');
+
+        testBtn.addEventListener('click', async () => {
+            resultDiv.textContent = 'Testing geolocation...';
+
+            if (!navigator.geolocation) {
+                resultDiv.textContent = 'Geolocation not supported';
+                return;
+            }
+
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 300000
+                    });
+                });
+
+                resultDiv.innerHTML = `
+                    <strong>Success!</strong><br>
+                    Latitude: ${position.coords.latitude}<br>
+                    Longitude: ${position.coords.longitude}<br>
+                    Accuracy: ${position.coords.accuracy} meters
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <strong>Error:</strong><br>
+                    Code: ${error.code}<br>
+                    Message: ${error.message}
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

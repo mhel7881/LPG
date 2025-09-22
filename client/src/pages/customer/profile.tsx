@@ -39,9 +39,9 @@ const addressSchema = z.object({
   province: z.string().min(1, "Province is required"),
   zipCode: z.string().min(1, "ZIP code is required"),
   coordinates: z.object({
-    lat: z.number(),
-    lng: z.number()
-  }).optional(),
+    lat: z.number().min(-90, "Invalid latitude").max(90, "Invalid latitude"),
+    lng: z.number().min(-180, "Invalid longitude").max(180, "Invalid longitude")
+  }, { required_error: "GPS coordinates are required for delivery tracking" }),
   isDefault: z.boolean().default(false),
 });
 
@@ -154,7 +154,7 @@ export default function CustomerProfile() {
       city: "",
       province: "",
       zipCode: "",
-      coordinates: undefined,
+      coordinates: { lat: 0, lng: 0 },
       isDefault: false,
     },
   });
@@ -225,7 +225,7 @@ export default function CustomerProfile() {
 
       toast({
         title: "Location Captured",
-        description: "Coordinates saved, but address conversion failed. Please enter your address details manually.",
+        description: "Coordinates saved successfully! Address lookup failed, but you can manually enter your address details below.",
         variant: "default",
       });
     }
@@ -275,10 +275,18 @@ export default function CustomerProfile() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
       setIsAddingAddress(false);
-      addressForm.reset();
+      addressForm.reset({
+        label: "",
+        street: "",
+        city: "",
+        province: "",
+        zipCode: "",
+        coordinates: { lat: 0, lng: 0 },
+        isDefault: false,
+      });
       toast({
         title: "Address Added",
-        description: "Your new address has been saved successfully.",
+        description: "Your new address has been saved successfully with GPS coordinates for accurate delivery tracking.",
       });
     },
     onError: (error: any) => {
@@ -292,24 +300,41 @@ export default function CustomerProfile() {
 
   const updateAddressMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<AddressFormData> }) => {
+      console.log('[Client Address Update] Starting update for ID:', id, 'Data:', data);
       const response = await fetch(`/api/users/addresses/${id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to update address");
-      return response.json();
+      console.log('[Client Address Update] Response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Client Address Update] Error response:', errorText);
+        throw new Error(`Failed to update address: ${response.status} ${errorText}`);
+      }
+      const result = await response.json();
+      console.log('[Client Address Update] Success:', result);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
       setEditingAddress(null);
-      addressForm.reset();
+      addressForm.reset({
+        label: "",
+        street: "",
+        city: "",
+        province: "",
+        zipCode: "",
+        coordinates: { lat: 0, lng: 0 },
+        isDefault: false,
+      });
       toast({
         title: "Address Updated",
-        description: "Your address has been updated successfully.",
+        description: "Your address has been updated successfully with GPS coordinates for accurate delivery tracking.",
       });
     },
     onError: (error: any) => {
+      console.error('[Client Address Update] Mutation error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to update address",
@@ -320,11 +345,20 @@ export default function CustomerProfile() {
 
   const deleteAddressMutation = useMutation({
     mutationFn: async (id: string) => {
+      console.log('[Client Address Delete] Starting delete for ID:', id);
       const response = await fetch(`/api/users/addresses/${id}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
-      if (!response.ok) throw new Error("Failed to delete address");
+      console.log('[Client Address Delete] Response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Client Address Delete] Error response:', errorText);
+        throw new Error(`Failed to delete address: ${response.status} ${errorText}`);
+      }
+      const result = await response.json();
+      console.log('[Client Address Delete] Success:', result);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
@@ -334,6 +368,7 @@ export default function CustomerProfile() {
       });
     },
     onError: (error: any) => {
+      console.error('[Client Address Delete] Mutation error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to delete address",
@@ -360,7 +395,7 @@ export default function CustomerProfile() {
       city: address.city,
       province: address.province,
       zipCode: address.zipCode,
-      coordinates: address.coordinates,
+      coordinates: address.coordinates || { lat: 0, lng: 0 },
       isDefault: address.isDefault,
     });
   };
@@ -370,26 +405,53 @@ export default function CustomerProfile() {
     setEditingAddress(null);
     setShowLocationCapture(false);
     setCapturedLocation(null);
-    addressForm.reset();
+    addressForm.reset({
+      label: "",
+      street: "",
+      city: "",
+      province: "",
+      zipCode: "",
+      coordinates: { lat: 0, lng: 0 },
+      isDefault: false,
+    });
   };
 
   const handleCaptureLocation = async () => {
+    console.log('[Profile] Starting location capture...');
+
     // Clear any previous captured location
     setCapturedLocation(null);
     setShowLocationCapture(true);
 
     try {
+      console.log('[Profile] Calling getCurrentPosition...');
       // Get current position and geocode - browser will automatically ask for permission
       const addressResult = await getCurrentPosition();
 
       if (addressResult) {
-        console.log('[Profile] Location and address captured successfully');
+        console.log('[Profile] Location and address captured successfully:', addressResult);
+        toast({
+          title: "Location Captured Successfully",
+          description: `Address: ${addressResult.formattedAddress || 'Coordinates saved'}`,
+        });
       } else {
-        console.log('[Profile] Location captured but geocoding failed');
+        console.log('[Profile] Location captured but geocoding failed - coordinates should still be saved');
+        toast({
+          title: "Location Captured",
+          description: "Coordinates saved successfully. Address lookup failed but you can enter details manually.",
+          variant: "default",
+        });
       }
     } catch (error) {
       console.error('[Profile] Error capturing location:', error);
       setShowLocationCapture(false);
+
+      // Show specific error message
+      toast({
+        title: "Location Error",
+        description: error instanceof Error ? error.message : "Failed to get your location",
+        variant: "destructive",
+      });
     }
   };
 
@@ -684,6 +746,68 @@ export default function CustomerProfile() {
                           </div>
                         </div>
 
+                        {/* GPS Coordinates - Always visible and auto-filled */}
+                        <div className="space-y-3">
+                          <Label className="text-base font-medium flex items-center">
+                            <Navigation className="h-4 w-4 mr-2 text-primary" />
+                            GPS Coordinates (Required for Delivery Tracking)
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            These coordinates will be used by our delivery team to locate your address accurately on the map.
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label htmlFor="latitude" className="text-sm font-medium">Latitude *</Label>
+                              <Input
+                                id="latitude"
+                                type="number"
+                                step="0.000001"
+                                placeholder="e.g., 14.599512"
+                                value={addressForm.watch("coordinates")?.lat || ""}
+                                onChange={(e) => {
+                                  const lat = parseFloat(e.target.value);
+                                  const currentLng = addressForm.watch("coordinates")?.lng || 0;
+                                  if (!isNaN(lat)) {
+                                    addressForm.setValue("coordinates", { lat, lng: currentLng });
+                                  }
+                                }}
+                                className="font-mono"
+                                data-testid="input-latitude"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="longitude" className="text-sm font-medium">Longitude *</Label>
+                              <Input
+                                id="longitude"
+                                type="number"
+                                step="0.000001"
+                                placeholder="e.g., 120.984222"
+                                value={addressForm.watch("coordinates")?.lng || ""}
+                                onChange={(e) => {
+                                  const lng = parseFloat(e.target.value);
+                                  const currentLat = addressForm.watch("coordinates")?.lat || 0;
+                                  if (!isNaN(lng)) {
+                                    addressForm.setValue("coordinates", { lat: currentLat, lng });
+                                  }
+                                }}
+                                className="font-mono"
+                                data-testid="input-longitude"
+                              />
+                            </div>
+                          </div>
+                          {addressForm.watch("coordinates") && (
+                            <p className="text-xs text-green-600 flex items-center">
+                              <Navigation className="h-3 w-3 mr-1" />
+                              ✓ Coordinates set: {addressForm.watch("coordinates")?.lat?.toFixed(6)}, {addressForm.watch("coordinates")?.lng?.toFixed(6)}
+                            </p>
+                          )}
+                          {addressForm.formState.errors.coordinates && (
+                            <p className="text-sm text-destructive">
+                              {addressForm.formState.errors.coordinates.message}
+                            </p>
+                          )}
+                        </div>
+
                         <div>
                           <Label htmlFor="street">Street Address</Label>
                           <Input
@@ -794,52 +918,12 @@ export default function CustomerProfile() {
                               <p className="mt-1 text-xs">You can also manually enter coordinates below if needed.</p>
                             </div>
 
-                            {/* Manual Coordinate Entry */}
-                            <div className="space-y-3">
-                              <Label className="text-sm font-medium">Or Enter Coordinates Manually</Label>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <Label htmlFor="manual-lat" className="text-xs">Latitude</Label>
-                                  <Input
-                                    id="manual-lat"
-                                    type="number"
-                                    step="0.000001"
-                                    placeholder="e.g., 14.5995"
-                                    value={addressForm.watch("coordinates")?.lat || ""}
-                                    onChange={(e) => {
-                                      const lat = parseFloat(e.target.value);
-                                      const currentLng = addressForm.watch("coordinates")?.lng || 0;
-                                      if (!isNaN(lat)) {
-                                        addressForm.setValue("coordinates", { lat, lng: currentLng });
-                                      }
-                                    }}
-                                    className="text-sm"
-                                  />
-                                </div>
-                                <div>
-                                  <Label htmlFor="manual-lng" className="text-xs">Longitude</Label>
-                                  <Input
-                                    id="manual-lng"
-                                    type="number"
-                                    step="0.000001"
-                                    placeholder="e.g., 120.9842"
-                                    value={addressForm.watch("coordinates")?.lng || ""}
-                                    onChange={(e) => {
-                                      const lng = parseFloat(e.target.value);
-                                      const currentLat = addressForm.watch("coordinates")?.lat || 0;
-                                      if (!isNaN(lng)) {
-                                        addressForm.setValue("coordinates", { lat: currentLat, lng });
-                                      }
-                                    }}
-                                    className="text-sm"
-                                  />
-                                </div>
-                              </div>
-                              {addressForm.watch("coordinates") && (
-                                <p className="text-xs text-green-600">
-                                  ✓ Coordinates set: {addressForm.watch("coordinates")?.lat?.toFixed(6)}, {addressForm.watch("coordinates")?.lng?.toFixed(6)}
-                                </p>
-                              )}
+                            {/* Alternative: Manual Coordinate Entry */}
+                            <div className="space-y-3 border-t pt-4">
+                              <Label className="text-sm font-medium">Alternative: Enter Coordinates Manually</Label>
+                              <p className="text-xs text-muted-foreground">
+                                If "Use Current Location" doesn't work, you can enter coordinates manually from Google Maps or another GPS app.
+                              </p>
                             </div>
 
                             {/* Map for location selection */}
@@ -858,7 +942,7 @@ export default function CustomerProfile() {
                                       size="sm"
                                       onClick={() => {
                                         setCapturedLocation(null);
-                                        addressForm.setValue("coordinates", undefined);
+                                        addressForm.setValue("coordinates", { lat: 0, lng: 0 });
                                       }}
                                       className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
                                       data-testid="button-close-map"

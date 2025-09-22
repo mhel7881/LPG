@@ -112,6 +112,20 @@ export const chatMessages = pgTable("chat_messages", {
   createdAt: timestamp("created_at").default(sql`now()`).notNull(),
 });
 
+export const deliveryDrivers = pgTable("delivery_drivers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  licenseNumber: text("license_number").notNull(),
+  vehicleType: text("vehicle_type").notNull(), // "motorcycle", "van", "truck"
+  plateNumber: text("plate_number").notNull(),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("4.8"), // 1.0 to 5.0
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`now()`).notNull(),
+});
+
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").references(() => users.id).notNull(),
@@ -172,6 +186,12 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
   createdAt: true,
 });
 
+export const insertDeliveryDriverSchema = createInsertSchema(deliveryDrivers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertDeliveryScheduleSchema = createInsertSchema(deliverySchedules).omit({
   id: true,
   createdAt: true,
@@ -199,6 +219,8 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type DeliveryDriver = typeof deliveryDrivers.$inferSelect;
+export type InsertDeliveryDriver = z.infer<typeof insertDeliveryDriverSchema>;
 export type DeliverySchedule = typeof deliverySchedules.$inferSelect;
 export type InsertDeliverySchedule = z.infer<typeof insertDeliveryScheduleSchema>;
 export type LoginRequest = z.infer<typeof loginSchema>;

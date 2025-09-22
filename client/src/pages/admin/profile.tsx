@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuthHeaders } from "@/lib/auth";
@@ -24,7 +25,9 @@ import {
   LogOut,
   Loader2,
   Eye,
-  EyeOff
+  EyeOff,
+  Truck,
+  Star
 } from "lucide-react";
 
 const profileSchema = z.object({
@@ -41,8 +44,22 @@ const passwordSchema = z.object({
   path: ["confirmPassword"],
 });
 
+const deliveryDriverSchema = z.object({
+  name: z.string().min(1, "Driver name is required"),
+  phone: z.string().min(1, "Phone number is required"),
+  email: z.string().email("Invalid email address").optional().or(z.literal("")),
+  licenseNumber: z.string().min(1, "License number is required"),
+  vehicleType: z.enum(["motorcycle", "van", "truck"], {
+    required_error: "Vehicle type is required",
+  }),
+  plateNumber: z.string().min(1, "Plate number is required"),
+  rating: z.number().min(1).max(5).optional(),
+  isActive: z.boolean().default(true),
+});
+
 type ProfileFormData = z.infer<typeof profileSchema>;
 type PasswordFormData = z.infer<typeof passwordSchema>;
+type DeliveryDriverFormData = z.infer<typeof deliveryDriverSchema>;
 
 export default function AdminProfile() {
   const [location] = useLocation();
@@ -51,6 +68,8 @@ export default function AdminProfile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isAddingDriver, setIsAddingDriver] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<any>(null);
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -66,6 +85,17 @@ export default function AdminProfile() {
         headers: getAuthHeaders(),
       });
       if (!response.ok) throw new Error("Failed to fetch notifications");
+      return response.json();
+    },
+  });
+
+  const { data: deliveryDrivers = [], isLoading: driversLoading } = useQuery({
+    queryKey: ["/api/admin/delivery-drivers"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/delivery-drivers", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch delivery drivers");
       return response.json();
     },
   });
@@ -110,6 +140,20 @@ export default function AdminProfile() {
       currentPassword: "",
       newPassword: "",
       confirmPassword: "",
+    },
+  });
+
+  const driverForm = useForm<DeliveryDriverFormData>({
+    resolver: zodResolver(deliveryDriverSchema),
+    defaultValues: {
+      name: "",
+      phone: "",
+      email: "",
+      licenseNumber: "",
+      vehicleType: "motorcycle",
+      plateNumber: "",
+      rating: 4.8,
+      isActive: true,
     },
   });
 
@@ -189,6 +233,126 @@ export default function AdminProfile() {
     updatePasswordMutation.mutate(data);
   };
 
+  // Delivery Driver mutations
+  const createDriverMutation = useMutation({
+    mutationFn: async (data: DeliveryDriverFormData) => {
+      const response = await fetch("/api/admin/delivery-drivers", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to create delivery driver");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/delivery-drivers"] });
+      setIsAddingDriver(false);
+      driverForm.reset();
+      toast({
+        title: "Driver Added",
+        description: "The delivery driver has been added successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add delivery driver",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateDriverMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<DeliveryDriverFormData> }) => {
+      const response = await fetch(`/api/admin/delivery-drivers/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update delivery driver");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/delivery-drivers"] });
+      setEditingDriver(null);
+      driverForm.reset();
+      toast({
+        title: "Driver Updated",
+        description: "The delivery driver has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update delivery driver",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteDriverMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/admin/delivery-drivers/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to delete delivery driver");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/delivery-drivers"] });
+      toast({
+        title: "Driver Deleted",
+        description: "The delivery driver has been removed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete delivery driver",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onDriverSubmit = (data: DeliveryDriverFormData) => {
+    if (editingDriver) {
+      updateDriverMutation.mutate({ id: editingDriver.id, data });
+    } else {
+      createDriverMutation.mutate(data);
+    }
+  };
+
+  const handleEditDriver = (driver: any) => {
+    setEditingDriver(driver);
+    setIsAddingDriver(true);
+    driverForm.reset({
+      name: driver.name,
+      phone: driver.phone,
+      email: driver.email || "",
+      licenseNumber: driver.licenseNumber,
+      vehicleType: driver.vehicleType,
+      plateNumber: driver.plateNumber,
+      rating: driver.rating || 4.8,
+      isActive: driver.isActive,
+    });
+  };
+
+  const handleCancelDriverForm = () => {
+    setIsAddingDriver(false);
+    setEditingDriver(null);
+    driverForm.reset({
+      name: "",
+      phone: "",
+      email: "",
+      licenseNumber: "",
+      vehicleType: "motorcycle",
+      plateNumber: "",
+      rating: 4.8,
+      isActive: true,
+    });
+  };
+
   // Update form when user data changes
   useEffect(() => {
     if (user && isEditingProfile) {
@@ -218,10 +382,10 @@ export default function AdminProfile() {
 
         {/* Profile Tabs */}
         <Tabs defaultValue={activeTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="profile" data-testid="tab-admin-profile">Profile</TabsTrigger>
-            <TabsTrigger value="notifications" data-testid="tab-admin-notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="security" data-testid="tab-admin-security">Security</TabsTrigger>
+          <TabsList className="flex w-full h-auto p-1 overflow-x-auto">
+            <TabsTrigger value="profile" data-testid="tab-admin-profile" className="text-xs sm:text-sm whitespace-nowrap">Profile</TabsTrigger>
+            <TabsTrigger value="notifications" data-testid="tab-admin-notifications" className="text-xs sm:text-sm whitespace-nowrap">Notifications</TabsTrigger>
+            <TabsTrigger value="security" data-testid="tab-admin-security" className="text-xs sm:text-sm whitespace-nowrap">Security</TabsTrigger>
           </TabsList>
 
           {/* Profile Tab */}
@@ -260,6 +424,290 @@ export default function AdminProfile() {
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Profile
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Delivery Drivers Management */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Truck className="h-5 w-5 mr-2" />
+                    Delivery Drivers Management
+                  </div>
+                  <Button
+                    onClick={() => setIsAddingDriver(true)}
+                    data-testid="button-add-driver"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Driver
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {/* Add/Edit Driver Form */}
+                {isAddingDriver && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6"
+                  >
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>
+                          {editingDriver ? "Edit Delivery Driver" : "Add New Delivery Driver"}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <form onSubmit={driverForm.handleSubmit(onDriverSubmit)} className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="driver-name">Full Name</Label>
+                              <Input
+                                id="driver-name"
+                                placeholder="Enter driver's full name"
+                                {...driverForm.register("name")}
+                                data-testid="input-driver-name"
+                              />
+                              {driverForm.formState.errors.name && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.name.message}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label htmlFor="driver-phone">Phone Number</Label>
+                              <Input
+                                id="driver-phone"
+                                type="tel"
+                                placeholder="Enter phone number"
+                                {...driverForm.register("phone")}
+                                data-testid="input-driver-phone"
+                              />
+                              {driverForm.formState.errors.phone && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.phone.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="driver-email">Email (Optional)</Label>
+                              <Input
+                                id="driver-email"
+                                type="email"
+                                placeholder="Enter email address"
+                                {...driverForm.register("email")}
+                                data-testid="input-driver-email"
+                              />
+                              {driverForm.formState.errors.email && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.email.message}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label htmlFor="driver-license">License Number</Label>
+                              <Input
+                                id="driver-license"
+                                placeholder="Enter license number"
+                                {...driverForm.register("licenseNumber")}
+                                data-testid="input-driver-license"
+                              />
+                              {driverForm.formState.errors.licenseNumber && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.licenseNumber.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <Label htmlFor="vehicle-type">Vehicle Type</Label>
+                              <Select
+                                value={driverForm.watch("vehicleType")}
+                                onValueChange={(value) => driverForm.setValue("vehicleType", value as "motorcycle" | "van" | "truck")}
+                              >
+                                <SelectTrigger data-testid="select-vehicle-type">
+                                  <SelectValue placeholder="Select vehicle type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="motorcycle">Motorcycle</SelectItem>
+                                  <SelectItem value="van">Van</SelectItem>
+                                  <SelectItem value="truck">Truck</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {driverForm.formState.errors.vehicleType && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.vehicleType.message}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label htmlFor="plate-number">Plate Number</Label>
+                              <Input
+                                id="plate-number"
+                                placeholder="Enter plate number"
+                                {...driverForm.register("plateNumber")}
+                                data-testid="input-plate-number"
+                              />
+                              {driverForm.formState.errors.plateNumber && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.plateNumber.message}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label htmlFor="rating">Rating</Label>
+                              <Input
+                                id="rating"
+                                type="number"
+                                step="0.1"
+                                min="1"
+                                max="5"
+                                placeholder="4.8"
+                                {...driverForm.register("rating", { valueAsNumber: true })}
+                                data-testid="input-driver-rating"
+                              />
+                              {driverForm.formState.errors.rating && (
+                                <p className="text-sm text-destructive">
+                                  {driverForm.formState.errors.rating.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              id="driver-active"
+                              checked={driverForm.watch("isActive")}
+                              onCheckedChange={(checked) => driverForm.setValue("isActive", checked)}
+                              data-testid="switch-driver-active"
+                            />
+                            <Label htmlFor="driver-active">Driver is active</Label>
+                          </div>
+
+                          <div className="flex space-x-3">
+                            <Button
+                              type="submit"
+                              disabled={createDriverMutation.isPending || updateDriverMutation.isPending}
+                              data-testid="button-save-driver"
+                            >
+                              {editingDriver ? "Update Driver" : "Add Driver"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleCancelDriverForm}
+                              data-testid="button-cancel-driver"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                )}
+
+                {/* Drivers List */}
+                <div className="space-y-4">
+                  {driversLoading ? (
+                    <div className="space-y-4">
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <Card key={i}>
+                          <CardContent className="p-4">
+                            <div className="space-y-2">
+                              <div className="h-4 bg-muted rounded animate-pulse"></div>
+                              <div className="h-3 bg-muted rounded animate-pulse w-3/4"></div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : deliveryDrivers.length === 0 ? (
+                    <Card>
+                      <CardContent className="p-8 text-center">
+                        <Truck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="font-semibold mb-2">No delivery drivers</h3>
+                        <p className="text-muted-foreground">
+                          Add delivery drivers to manage your delivery team.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    deliveryDrivers.map((driver: any) => (
+                      <Card key={driver.id}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-3">
+                              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                <User className="h-6 w-6 text-primary" />
+                              </div>
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <h3 className="font-medium" data-testid={`text-driver-name-${driver.id}`}>
+                                    {driver.name}
+                                  </h3>
+                                  {!driver.isActive && (
+                                    <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                      Inactive
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-muted-foreground text-sm" data-testid={`text-driver-phone-${driver.id}`}>
+                                  {driver.phone}
+                                </p>
+                                <div className="flex items-center space-x-2 mt-1">
+                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                  <span className="text-sm text-muted-foreground">{driver.rating || 4.8}</span>
+                                  <span className="text-sm text-muted-foreground">•</span>
+                                  <span className="text-sm text-muted-foreground">License: {driver.licenseNumber}</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Vehicle:</span>
+                                    <p className="font-medium capitalize">{driver.vehicleType}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Plate:</span>
+                                    <p className="font-medium">{driver.plateNumber}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEditDriver(driver)}
+                                data-testid={`button-edit-driver-${driver.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteDriverMutation.mutate(driver.id)}
+                                className="text-destructive hover:text-destructive"
+                                data-testid={`button-delete-driver-${driver.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -331,6 +779,7 @@ export default function AdminProfile() {
               </motion.div>
             )}
           </TabsContent>
+
 
           {/* Notifications Tab */}
           <TabsContent value="notifications">

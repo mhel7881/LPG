@@ -434,14 +434,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const updates = req.body;
-      const address = await storage.updateAddress(id, updates);
-      
-      if (!address) {
-        return res.status(404).json({ message: 'Address not found' });
+
+      console.log('[Address Update] User:', req.user.id, 'Address ID:', id, 'Updates:', updates);
+
+      // First check if the address belongs to the user
+      const existingAddress = await storage.getUserAddresses(req.user.id);
+      const addressExists = existingAddress.find(addr => addr.id === id);
+
+      if (!addressExists) {
+        console.log('[Address Update] Address not found or not owned by user');
+        return res.status(404).json({ message: 'Address not found or access denied' });
       }
-      
+
+      const address = await storage.updateAddress(id, updates);
+
+      if (!address) {
+        console.log('[Address Update] Update failed');
+        return res.status(500).json({ message: 'Failed to update address' });
+      }
+
+      console.log('[Address Update] Success:', address);
       res.json(address);
     } catch (error) {
+      console.error('[Address Update] Error:', error);
       res.status(400).json({ message: 'Failed to update address' });
     }
   });
@@ -449,14 +464,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/users/addresses/:id', authenticateToken, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const success = await storage.deleteAddress(id);
-      
-      if (!success) {
-        return res.status(404).json({ message: 'Address not found' });
+
+      console.log('[Address Delete] User:', req.user.id, 'Address ID:', id);
+
+      // First check if the address belongs to the user
+      const existingAddresses = await storage.getUserAddresses(req.user.id);
+      const addressExists = existingAddresses.find(addr => addr.id === id);
+
+      if (!addressExists) {
+        console.log('[Address Delete] Address not found or not owned by user');
+        return res.status(404).json({ message: 'Address not found or access denied' });
       }
-      
+
+      // Check if address is used in any orders
+      const ordersWithAddress = await storage.getOrdersByCustomer(req.user.id);
+      const addressInUse = ordersWithAddress.some(order => order.addressId === id);
+
+      if (addressInUse) {
+        console.log('[Address Delete] Address is in use by orders, cannot delete');
+        return res.status(400).json({
+          message: 'Cannot delete address because it is being used in existing orders. Please contact support if you need to change this address.'
+        });
+      }
+
+      const success = await storage.deleteAddress(id);
+
+      if (!success) {
+        console.log('[Address Delete] Delete failed');
+        return res.status(500).json({ message: 'Failed to delete address' });
+      }
+
+      console.log('[Address Delete] Success');
       res.json({ message: 'Address deleted successfully' });
     } catch (error) {
+      console.error('[Address Delete] Error:', error);
       res.status(400).json({ message: 'Failed to delete address' });
     }
   });
@@ -634,6 +675,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/orders/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const order = await storage.getOrderById(id);
+
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      // Check if user has permission to view this order
+      if (req.user.role !== 'admin' && order.customerId !== req.user.id) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      res.json(order);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch order' });
+    }
+  });
+
   app.post('/api/orders', authenticateToken, async (req: any, res) => {
     try {
       const orderData = insertOrderSchema.parse({
@@ -731,6 +792,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('[Admin Orders Tracking] Error fetching orders:', error);
       res.status(500).json({ message: 'Failed to fetch orders for tracking' });
+    }
+  });
+
+  // Delivery Drivers routes
+  app.get('/api/admin/delivery-drivers', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const drivers = await storage.getDeliveryDrivers();
+      res.json(drivers);
+    } catch (error) {
+      console.error('[Delivery Drivers] Error fetching drivers:', error);
+      res.status(500).json({ message: 'Failed to fetch delivery drivers' });
+    }
+  });
+
+  app.post('/api/admin/delivery-drivers', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const driverData = req.body;
+      const driver = await storage.createDeliveryDriver(driverData);
+      res.status(201).json(driver);
+    } catch (error) {
+      console.error('[Delivery Drivers] Error creating driver:', error);
+      res.status(400).json({ message: 'Failed to create delivery driver' });
+    }
+  });
+
+  app.put('/api/admin/delivery-drivers/:id', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const driver = await storage.updateDeliveryDriver(id, updates);
+
+      if (!driver) {
+        return res.status(404).json({ message: 'Delivery driver not found' });
+      }
+
+      res.json(driver);
+    } catch (error) {
+      console.error('[Delivery Drivers] Error updating driver:', error);
+      res.status(400).json({ message: 'Failed to update delivery driver' });
+    }
+  });
+
+  app.delete('/api/admin/delivery-drivers/:id', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteDeliveryDriver(id);
+
+      if (!success) {
+        return res.status(404).json({ message: 'Delivery driver not found' });
+      }
+
+      res.json({ message: 'Delivery driver deleted successfully' });
+    } catch (error) {
+      console.error('[Delivery Drivers] Error deleting driver:', error);
+      res.status(400).json({ message: 'Failed to delete delivery driver' });
     }
   });
 

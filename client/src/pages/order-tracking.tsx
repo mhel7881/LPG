@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,8 +22,14 @@ import {
   AlertCircle,
   Navigation,
   Phone,
-  RefreshCw
+  RefreshCw,
+  Play,
+  Pause,
+  RotateCcw,
+  User,
+  Star
 } from "lucide-react";
+import L from 'leaflet';
 
 interface Order {
   id: string;
@@ -56,13 +62,27 @@ interface Order {
   };
 }
 
+// Restaurant location (should be configurable in real app)
+const RESTAURANT_LOCATION: GeolocationPosition = {
+  latitude: 14.5995,
+  longitude: 120.9842
+};
+
 export default function OrderTracking() {
   const { orderId } = useParams<{ orderId: string }>();
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [refreshing, setRefreshing] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState<GeolocationPosition | null>(null);
   const [lastLocationUpdate, setLastLocationUpdate] = useState<Date | null>(null);
+  const [riderPosition, setRiderPosition] = useState<GeolocationPosition | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationStep, setSimulationStep] = useState(0);
+  const [routeLine, setRouteLine] = useState<any>(null);
+  const [adminLocation, setAdminLocation] = useState<GeolocationPosition | null>(null);
+  const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const adminLocationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mapRef = useRef<any>(null);
   const { position: currentLocation, getCurrentPosition } = useGeolocation();
   const { isConnected, sendMessage, lastMessage } = useWebSocket();
 
@@ -82,6 +102,17 @@ export default function OrderTracking() {
     },
     enabled: !!orderId,
     refetchInterval: 60000, // Refresh every minute
+  });
+
+  const { data: deliveryDrivers = [] } = useQuery({
+    queryKey: ["/api/admin/delivery-drivers"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/delivery-drivers", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch delivery drivers");
+      return response.json();
+    },
   });
 
   useEffect(() => {
@@ -195,33 +226,201 @@ export default function OrderTracking() {
     }
   };
 
-  // Simulate delivery driver location (in real app, this would come from your backend)
+  // Simulate delivery driver location with animation
   const getDeliveryDriverLocation = (): GeolocationPosition | null => {
     if (order?.status !== "out_for_delivery" || !order?.address?.coordinates) {
       return null;
     }
-    
-    // Simulate driver location - slightly offset from destination
+
+    // Use simulated position if available, otherwise calculate based on simulation step
+    if (riderPosition) {
+      return riderPosition;
+    }
+
+    // Default simulation: driver starts at restaurant and moves toward destination
+    const startLat = RESTAURANT_LOCATION.latitude;
+    const startLng = RESTAURANT_LOCATION.longitude;
+    const endLat = order.address.coordinates.lat;
+    const endLng = order.address.coordinates.lng;
+
+    // Calculate intermediate position based on simulation step (0-100)
+    const progress = Math.min(simulationStep / 100, 1);
+    const currentLat = startLat + (endLat - startLat) * progress;
+    const currentLng = startLng + (endLng - startLng) * progress;
+
     return {
-      latitude: order.address.coordinates.lat + 0.001,
-      longitude: order.address.coordinates.lng + 0.001
+      latitude: currentLat,
+      longitude: currentLng
     };
   };
+
+  // Simulation controls
+  const startSimulation = () => {
+    setIsSimulating(true);
+    setSimulationStep(0);
+    setRiderPosition(null);
+
+    simulationIntervalRef.current = setInterval(() => {
+      setSimulationStep(prev => {
+        const next = prev + 2; // Move 2% every 500ms
+        if (next >= 100) {
+          setIsSimulating(false);
+          if (simulationIntervalRef.current) {
+            clearInterval(simulationIntervalRef.current);
+          }
+          return 100;
+        }
+
+        // Update rider position for route line
+        if (order?.address?.coordinates) {
+          const progress = next / 100;
+          const currentLat = RESTAURANT_LOCATION.latitude + (order.address.coordinates.lat - RESTAURANT_LOCATION.latitude) * progress;
+          const currentLng = RESTAURANT_LOCATION.longitude + (order.address.coordinates.lng - RESTAURANT_LOCATION.longitude) * progress;
+
+          const newPosition = {
+            latitude: currentLat,
+            longitude: currentLng
+          };
+          setRiderPosition(newPosition);
+          updateRouteLine(newPosition);
+        }
+
+        return next;
+      });
+    }, 500);
+  };
+
+  const pauseSimulation = () => {
+    setIsSimulating(false);
+    if (simulationIntervalRef.current) {
+      clearInterval(simulationIntervalRef.current);
+    }
+  };
+
+  const resetSimulation = () => {
+    setIsSimulating(false);
+    setSimulationStep(0);
+    setRiderPosition(null);
+    if (simulationIntervalRef.current) {
+      clearInterval(simulationIntervalRef.current);
+    }
+  };
+
+  // Create route line between restaurant and destination
+  const createRouteLine = () => {
+    if (!order?.address?.coordinates) return null;
+
+    const routePoints: L.LatLngTuple[] = [
+      [RESTAURANT_LOCATION.latitude, RESTAURANT_LOCATION.longitude],
+      [order.address.coordinates.lat, order.address.coordinates.lng]
+    ];
+
+    return L.polyline(routePoints, {
+      color: '#3b82f6',
+      weight: 4,
+      opacity: 0.7,
+      dashArray: '10, 10'
+    });
+  };
+
+  // Update route line with rider position
+  const updateRouteLine = (riderPos: GeolocationPosition) => {
+    if (!order?.address?.coordinates) return;
+
+    const routePoints: L.LatLngTuple[] = [
+      [RESTAURANT_LOCATION.latitude, RESTAURANT_LOCATION.longitude],
+      [riderPos.latitude, riderPos.longitude],
+      [order.address.coordinates.lat, order.address.coordinates.lng]
+    ];
+
+    if (routeLine) {
+      routeLine.setLatLngs(routePoints);
+    }
+  };
+
+  // Track admin's actual device location
+  const updateAdminLocation = async () => {
+    if (!navigator.geolocation) {
+      console.log('Geolocation not supported');
+      setAdminLocation({
+        latitude: 14.5995,
+        longitude: 120.9842
+      });
+      return;
+    }
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            });
+          },
+          (error) => {
+            reject(error);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 300000
+          }
+        );
+      });
+
+      setAdminLocation(position);
+      console.log('Admin location updated:', position);
+    } catch (error) {
+      console.log('Admin location tracking failed:', error);
+      // Fallback to restaurant location if GPS fails
+      setAdminLocation({
+        latitude: 14.5995,
+        longitude: 120.9842
+      });
+    }
+  };
+
+  // Start admin location tracking
+  useEffect(() => {
+    // Initial location update
+    updateAdminLocation();
+
+    // Update admin location every 30 seconds
+    adminLocationIntervalRef.current = setInterval(updateAdminLocation, 30000);
+
+    return () => {
+      if (adminLocationIntervalRef.current) {
+        clearInterval(adminLocationIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Cleanup simulation on unmount
+  useEffect(() => {
+    return () => {
+      if (simulationIntervalRef.current) {
+        clearInterval(simulationIntervalRef.current);
+      }
+      if (adminLocationIntervalRef.current) {
+        clearInterval(adminLocationIntervalRef.current);
+      }
+    };
+  }, []);
 
   const getMapMarkers = () => {
     const markers = [];
 
-    // Customer current location
-    if (currentLocation) {
-      markers.push({
-        id: "current-location",
-        position: currentLocation,
-        title: "Your Location",
-        type: "customer" as const
-      });
-    }
+    // Restaurant location
+    markers.push({
+      id: "restaurant",
+      position: RESTAURANT_LOCATION,
+      title: "GasFlow Restaurant",
+      type: "restaurant" as const
+    });
 
-    // Delivery destination
+    // Customer delivery destination
     if (order?.address?.coordinates) {
       markers.push({
         id: "destination",
@@ -234,14 +433,24 @@ export default function OrderTracking() {
       });
     }
 
-    // Delivery driver location
+    // Delivery driver location with pulse animation
     const driverLocation = getDeliveryDriverLocation();
     if (driverLocation) {
       markers.push({
         id: "driver",
         position: driverLocation,
-        title: "Delivery Driver",
+        title: `Delivery Driver - ${isSimulating ? 'Moving' : 'Stationary'}`,
         type: "delivery" as const
+      });
+    }
+
+    // Admin location (real-time device tracking)
+    if (adminLocation) {
+      markers.push({
+        id: "admin",
+        position: adminLocation,
+        title: `Admin Location (Live GPS) - ${adminLocation.latitude.toFixed(6)}, ${adminLocation.longitude.toFixed(6)}`,
+        type: "admin" as const
       });
     }
 
@@ -276,7 +485,7 @@ export default function OrderTracking() {
             <p className="text-muted-foreground mb-4">
               The order you're looking for doesn't exist or you don't have permission to view it.
             </p>
-            <Button onClick={() => navigate("/orders")}>
+            <Button onClick={() => setLocation("/orders")}>
               Back to Orders
             </Button>
           </CardContent>
@@ -292,7 +501,7 @@ export default function OrderTracking() {
         <Button 
           variant="ghost" 
           size="icon" 
-          onClick={() => navigate("/orders")}
+          onClick={() => setLocation("/orders")}
           data-testid="button-back-to-orders"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -399,36 +608,168 @@ export default function OrderTracking() {
         >
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <MapPin className="h-5 w-5 mr-2" />
-                Live Tracking
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <MapPin className="h-5 w-5 mr-2" />
+                  Live Tracking
+                </div>
+                {/* Simulation Controls */}
+                <div className="flex items-center space-x-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={startSimulation}
+                    disabled={isSimulating || order.status !== "out_for_delivery"}
+                    className="text-xs"
+                  >
+                    <Play className="h-3 w-3 mr-1" />
+                    Simulate
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={pauseSimulation}
+                    disabled={!isSimulating}
+                    className="text-xs"
+                  >
+                    <Pause className="h-3 w-3 mr-1" />
+                    Pause
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={resetSimulation}
+                    className="text-xs"
+                  >
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Reset
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              <Map
-                center={{
-                  latitude: order.address.coordinates.lat,
-                  longitude: order.address.coordinates.lng
-                }}
-                markers={getMapMarkers()}
-                className="h-64 md:h-96"
-              />
-              
-              {/* Delivery Info */}
-              <div className="mt-4 p-4 bg-muted/30 rounded-lg">
-                <h4 className="font-medium mb-2">Delivery Address</h4>
-                <p className="text-sm text-muted-foreground">
-                  {order.address.street}, {order.address.city}, {order.address.province} {order.address.zipCode}
-                </p>
-                {order.status === "out_for_delivery" && (
-                  <div className="flex items-center space-x-2 mt-2">
-                    <Truck className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-600">
-                      Driver is on the way
-                    </span>
+              <div className="space-y-4">
+                <Map
+                  center={{
+                    latitude: order.address.coordinates.lat,
+                    longitude: order.address.coordinates.lng
+                  }}
+                  markers={getMapMarkers()}
+                  className="h-64 md:h-96"
+                />
+
+                {/* Simulation Progress */}
+                {isSimulating && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span>Delivery Progress</span>
+                      <span>{simulationStep}%</span>
+                    </div>
+                    <Progress value={simulationStep} className="h-2" />
                   </div>
                 )}
+
+                {/* Delivery Info */}
+                <div className="p-4 bg-muted/30 rounded-lg">
+                  <h4 className="font-medium mb-2">Delivery Address</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {order.address.street}, {order.address.city}, {order.address.province} {order.address.zipCode}
+                  </p>
+                  {order.status === "out_for_delivery" && (
+                    <div className="flex items-center space-x-2 mt-2">
+                      <Truck className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-600">
+                        Driver is on the way
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Rider Information Panel */}
+      {order.status === "out_for_delivery" && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <User className="h-5 w-5 mr-2" />
+                Delivery Driver Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {deliveryDrivers.length > 0 ? (
+                <>
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                      <User className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium">{deliveryDrivers[0].name}</h4>
+                      <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1">
+                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          <span className="text-sm text-muted-foreground">{deliveryDrivers[0].rating || 4.8}</span>
+                        </div>
+                        <span className="text-sm text-muted-foreground">•</span>
+                        <span className="text-sm text-muted-foreground">License: {deliveryDrivers[0].licenseNumber}</span>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => window.open(`tel:${deliveryDrivers[0].phone}`)}>
+                      <Phone className="h-4 w-4 mr-2" />
+                      Call
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Vehicle:</span>
+                      <p className="font-medium capitalize">{deliveryDrivers[0].vehicleType}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Plate Number:</span>
+                      <p className="font-medium">{deliveryDrivers[0].plateNumber}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Phone:</span>
+                      <p className="font-medium">{deliveryDrivers[0].phone}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">ETA:</span>
+                      <p className="font-medium text-green-600">
+                        {isSimulating ? `${Math.max(0, Math.round((100 - simulationStep) * 0.3))} mins` : "15-30 mins"}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <User className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Driver information not available</p>
+                </div>
+              )}
+
+              {riderPosition && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <Navigation className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium">Current Location:</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {riderPosition.latitude.toFixed(6)}, {riderPosition.longitude.toFixed(6)}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Last updated: {lastLocationUpdate ? lastLocationUpdate.toLocaleTimeString() : 'Just now'}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

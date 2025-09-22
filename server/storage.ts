@@ -18,6 +18,8 @@ import {
   type InsertNotification,
   type DeliverySchedule,
   type InsertDeliverySchedule,
+  type DeliveryDriver,
+  type InsertDeliveryDriver,
   users,
   addresses,
   products,
@@ -25,7 +27,8 @@ import {
   cartItems,
   chatMessages,
   notifications,
-  deliverySchedules
+  deliverySchedules,
+  deliveryDrivers
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
@@ -122,6 +125,12 @@ export interface IStorage {
   setPasswordResetToken(id: string, token: string, expires: Date): Promise<User | undefined>;
   getUserByPasswordResetToken(token: string): Promise<User | undefined>;
   clearPasswordResetToken(id: string): Promise<User | undefined>;
+
+  // Delivery Drivers
+  getDeliveryDrivers(): Promise<any[]>;
+  createDeliveryDriver(driver: any): Promise<any>;
+  updateDeliveryDriver(id: string, updates: any): Promise<any>;
+  deleteDeliveryDriver(id: string): Promise<boolean>;
 
   // Seed data
   seedData(): Promise<void>;
@@ -797,6 +806,34 @@ export class DrizzleStorage implements IStorage {
     return result[0];
   }
 
+  // Delivery Drivers
+  async getDeliveryDrivers(): Promise<any[]> {
+    return await db.select().from(deliveryDrivers).orderBy(desc(deliveryDrivers.createdAt));
+  }
+
+  async createDeliveryDriver(driver: any): Promise<any> {
+    const result = await db.insert(deliveryDrivers).values(driver).returning();
+    return result[0];
+  }
+
+  async updateDeliveryDriver(id: string, updates: any): Promise<any> {
+    const result = await db.update(deliveryDrivers)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryDrivers.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteDeliveryDriver(id: string): Promise<boolean> {
+    const result = await db.delete(deliveryDrivers)
+      .where(eq(deliveryDrivers.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
   async seedData(): Promise<void> {
     try {
       // Test database connection with a simple query
@@ -880,6 +917,83 @@ export class DrizzleStorage implements IStorage {
         coordinates: JSON.stringify({ lat: 11.9674, lng: 121.9248 }),
         isDefault: false,
       });
+
+      // Create sample delivery drivers
+      const existingDrivers = await this.getDeliveryDrivers();
+      if (existingDrivers.length === 0) {
+        await this.createDeliveryDriver({
+          name: 'Juan Dela Cruz',
+          phone: '+63 912 345 6789',
+          email: 'juan.delacruz@gasflow.com',
+          licenseNumber: 'ABC-123-XYZ',
+          vehicleType: 'motorcycle',
+          plateNumber: 'XYZ-456',
+          rating: '4.8',
+          isActive: true,
+        });
+  
+        await this.createDeliveryDriver({
+          name: 'Maria Santos',
+          phone: '+63 917 987 6543',
+          email: 'maria.santos@gasflow.com',
+          licenseNumber: 'DEF-456-UVW',
+          vehicleType: 'van',
+          plateNumber: 'UVW-789',
+          rating: '4.9',
+          isActive: true,
+        });
+  
+        await this.createDeliveryDriver({
+          name: 'Pedro Reyes',
+          phone: '+63 918 555 1234',
+          email: 'pedro.reyes@gasflow.com',
+          licenseNumber: 'GHI-789-RST',
+          vehicleType: 'motorcycle',
+          plateNumber: 'RST-012',
+          rating: '4.7',
+          isActive: true,
+        });
+  
+        console.log('Sample delivery drivers created');
+      }
+  
+      // Create sample orders for testing
+      const addresses = await this.getUserAddresses(customerId);
+      const homeAddress = addresses.find(addr => addr.label === 'Home');
+  
+      if (homeAddress) {
+        // Create a pending order
+        await this.createOrder({
+          customerId: customerId,
+          productId: 'sample-product-1', // This will be replaced with actual product ID
+          addressId: homeAddress.id,
+          quantity: 1,
+          type: 'new',
+          unitPrice: '1000.00',
+          totalAmount: '1000.00',
+          status: 'pending',
+          paymentMethod: 'cash',
+          paymentStatus: 'pending',
+          notes: 'Sample order for testing'
+        });
+  
+        // Create an out_for_delivery order
+        await this.createOrder({
+          customerId: customerId,
+          productId: 'sample-product-2',
+          addressId: homeAddress.id,
+          quantity: 2,
+          type: 'new',
+          unitPrice: '800.00',
+          totalAmount: '1600.00',
+          status: 'out_for_delivery',
+          paymentMethod: 'gcash',
+          paymentStatus: 'paid',
+          notes: 'Urgent delivery - track this order'
+        });
+  
+        console.log('Sample orders created for testing');
+      }
     }
 
   }

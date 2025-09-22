@@ -186,7 +186,7 @@ export function Navigation() {
           Analytics
         </Button>
       </Link>
-      <Link href="/admin/pos" data-testid="link-admin-pos">
+      {/* <Link href="/admin/pos" data-testid="link-admin-pos">
         <Button
           variant={location === "/admin/pos" ? "default" : "ghost"}
           size="sm"
@@ -195,7 +195,7 @@ export function Navigation() {
           <ShoppingCart className="h-4 w-4 mr-2" />
           POS System
         </Button>
-      </Link>
+      </Link> */}
       <Link href="/admin/profile" data-testid="link-admin-profile">
         <Button
           variant={location === "/admin/profile" ? "default" : "ghost"}
