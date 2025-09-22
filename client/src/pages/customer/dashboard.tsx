@@ -126,7 +126,7 @@ export default function CustomerDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold mb-2" data-testid="text-welcome-message">
-              Welcome back, jayar!
+              Welcome back, {user?.name}!
             </h1>
             <p className="text-primary-foreground/80 mb-4">
               Need LPG? Order now for fast delivery to your doorstep

@@ -27,7 +27,9 @@ import {
   LogOut,
   Navigation,
   Loader2,
-  X
+  X,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 const addressSchema = z.object({
@@ -84,6 +86,9 @@ export default function CustomerProfile() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [enable2FA, setEnable2FA] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1092,13 +1097,30 @@ export default function CustomerProfile() {
                       <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
                         <div>
                           <Label htmlFor="current-password">Current Password</Label>
-                          <Input
-                            id="current-password"
-                            type="password"
-                            placeholder="Enter your current password"
-                            {...passwordForm.register("currentPassword")}
-                            data-testid="input-current-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="current-password"
+                              type={showCurrentPassword ? "text" : "password"}
+                              placeholder="Enter your current password"
+                              className="pr-12"
+                              {...passwordForm.register("currentPassword")}
+                              data-testid="input-current-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                              data-testid="button-toggle-current-password"
+                            >
+                              {showCurrentPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.currentPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.currentPassword.message}
@@ -1107,13 +1129,30 @@ export default function CustomerProfile() {
                         </div>
                         <div>
                           <Label htmlFor="new-password">New Password</Label>
-                          <Input
-                            id="new-password"
-                            type="password"
-                            placeholder="Enter your new password"
-                            {...passwordForm.register("newPassword")}
-                            data-testid="input-new-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="new-password"
+                              type={showNewPassword ? "text" : "password"}
+                              placeholder="Enter your new password"
+                              className="pr-12"
+                              {...passwordForm.register("newPassword")}
+                              data-testid="input-new-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              data-testid="button-toggle-new-password"
+                            >
+                              {showNewPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.newPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.newPassword.message}
@@ -1122,13 +1161,30 @@ export default function CustomerProfile() {
                         </div>
                         <div>
                           <Label htmlFor="confirm-password">Confirm New Password</Label>
-                          <Input
-                            id="confirm-password"
-                            type="password"
-                            placeholder="Confirm your new password"
-                            {...passwordForm.register("confirmPassword")}
-                            data-testid="input-confirm-password"
-                          />
+                          <div className="relative">
+                            <Input
+                              id="confirm-password"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="Confirm your new password"
+                              className="pr-12"
+                              {...passwordForm.register("confirmPassword")}
+                              data-testid="input-confirm-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              data-testid="button-toggle-confirm-password"
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
                           {passwordForm.formState.errors.confirmPassword && (
                             <p className="text-sm text-destructive">
                               {passwordForm.formState.errors.confirmPassword.message}

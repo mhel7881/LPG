@@ -147,8 +147,8 @@ export function Navigation() {
   const AdminNavItems = () => (
     <>
       <Link href="/admin" data-testid="link-admin-dashboard">
-        <Button 
-          variant={location === "/admin" ? "default" : "ghost"} 
+        <Button
+          variant={location === "/admin" ? "default" : "ghost"}
           size="sm"
           className="justify-start"
         >
@@ -157,8 +157,8 @@ export function Navigation() {
         </Button>
       </Link>
       <Link href="/admin/orders" data-testid="link-admin-orders">
-        <Button 
-          variant={location === "/admin/orders" ? "default" : "ghost"} 
+        <Button
+          variant={location === "/admin/orders" ? "default" : "ghost"}
           size="sm"
           className="justify-start"
         >
@@ -167,8 +167,8 @@ export function Navigation() {
         </Button>
       </Link>
       <Link href="/admin/inventory" data-testid="link-admin-inventory">
-        <Button 
-          variant={location === "/admin/inventory" ? "default" : "ghost"} 
+        <Button
+          variant={location === "/admin/inventory" ? "default" : "ghost"}
           size="sm"
           className="justify-start"
         >
@@ -177,8 +177,8 @@ export function Navigation() {
         </Button>
       </Link>
       <Link href="/admin/analytics" data-testid="link-admin-analytics">
-        <Button 
-          variant={location === "/admin/analytics" ? "default" : "ghost"} 
+        <Button
+          variant={location === "/admin/analytics" ? "default" : "ghost"}
           size="sm"
           className="justify-start"
         >
@@ -187,13 +187,23 @@ export function Navigation() {
         </Button>
       </Link>
       <Link href="/admin/pos" data-testid="link-admin-pos">
-        <Button 
-          variant={location === "/admin/pos" ? "default" : "ghost"} 
+        <Button
+          variant={location === "/admin/pos" ? "default" : "ghost"}
           size="sm"
           className="justify-start"
         >
           <ShoppingCart className="h-4 w-4 mr-2" />
           POS System
+        </Button>
+      </Link>
+      <Link href="/admin/profile" data-testid="link-admin-profile">
+        <Button
+          variant={location === "/admin/profile" ? "default" : "ghost"}
+          size="sm"
+          className="justify-start"
+        >
+          <User className="h-4 w-4 mr-2" />
+          Profile
         </Button>
       </Link>
     </>
@@ -202,7 +212,7 @@ export function Navigation() {
   if (!user) {
     return (
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between">
+        <div className="container flex h-14 items-center justify-between pr-6">
           <Link href="/" className="flex items-center space-x-2 ml-6" data-testid="link-home">
             <img src="/flame-logo.png" alt="GasFlow" className="h-6 w-6" />
             <span className="font-bold text-lg">GasFlow</span>
@@ -254,9 +264,9 @@ export function Navigation() {
                   <Button variant="ghost" size="icon" className="relative">
                     <ShoppingCart className="h-4 w-4" />
                     {cartItemCount > 0 && (
-                      <Badge 
-                        variant="destructive" 
-                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                      <Badge
+                        variant="destructive"
+                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
                         data-testid="text-cart-count"
                       >
                         {cartItemCount}
@@ -273,7 +283,7 @@ export function Navigation() {
                       {unreadNotificationsCount > 0 && (
                         <Badge
                           variant="destructive"
-                          className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                          className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
                           data-testid="badge-notification-count"
                         >
                           {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
@@ -370,8 +380,8 @@ export function Navigation() {
 
         {/* Mobile Navigation Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 top-14 z-40 bg-background/80 backdrop-blur-sm">
-            <div className="fixed left-0 top-14 h-full w-64 bg-card border-r p-4 space-y-2 slide-in">
+          <div className="fixed inset-0 top-0 z-40 bg-background/80 backdrop-blur-sm">
+            <div className="fixed left-0 top-0 h-full w-64 bg-card border-r p-4 space-y-2 slide-in pt-16">
               {user.role === "admin" ? <AdminNavItems /> : <CustomerNavItems />}
               
               <div className="pt-4 border-t space-y-2">
@@ -478,14 +488,14 @@ export function Navigation() {
                     <span className="text-xs">Inventory</span>
                   </Button>
                 </Link>
-                <Link href="/admin/analytics" data-testid="link-mobile-admin-analytics">
+                <Link href="/admin/profile" data-testid="link-mobile-admin-profile">
                   <Button
-                    variant={location === "/admin/analytics" ? "default" : "ghost"}
+                    variant={location === "/admin/profile" ? "default" : "ghost"}
                     size="sm"
                     className="flex flex-col h-auto py-2 px-4"
                   >
-                    <Settings className="h-4 w-4 mb-1" />
-                    <span className="text-xs">Analytics</span>
+                    <User className="h-4 w-4 mb-1" />
+                    <span className="text-xs">Profile</span>
                   </Button>
                 </Link>
               </>
@@ -517,9 +527,9 @@ export function Navigation() {
               <Button variant="ghost" size="icon" className="relative">
                 <ShoppingCart className="h-4 w-4" />
                 {cartItemCount > 0 && (
-                  <Badge 
-                    variant="destructive" 
-                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                  <Badge
+                    variant="destructive"
+                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
                     data-testid="text-desktop-cart-count"
                   >
                     {cartItemCount}
@@ -535,7 +545,7 @@ export function Navigation() {
                 {unreadNotificationsCount > 0 && (
                   <Badge
                     variant="destructive"
-                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs"
+                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center"
                     data-testid="badge-desktop-notification-count"
                   >
                     {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}

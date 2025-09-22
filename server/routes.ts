@@ -1050,17 +1050,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const supabaseUrl = process.env.SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
+      console.log('Supabase URL:', supabaseUrl);
+      console.log('Supabase Key exists:', !!supabaseKey);
+
       if (!supabaseUrl || !supabaseKey) {
         throw new Error('Supabase configuration missing');
       }
 
       const supabase = createClient(supabaseUrl, supabaseKey);
+      console.log('Supabase client created successfully');
 
       // Generate unique filename
       const fileExt = req.file.originalname.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
 
+      console.log('File details:', {
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        generatedFileName: fileName
+      });
+
       // Upload file to Supabase bucket
+      console.log('Attempting to upload to bucket: images');
       const { data, error } = await supabase.storage
         .from('images')
         .upload(fileName, req.file.buffer, {
@@ -1068,9 +1080,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           upsert: false
         });
 
+      console.log('Upload result:', { data, error });
+
       if (error) {
         console.error('Supabase upload error:', error);
-        throw new Error('Failed to upload image to storage');
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        throw new Error(`Failed to upload image to storage: ${error.message}`);
       }
 
       // Get public URL

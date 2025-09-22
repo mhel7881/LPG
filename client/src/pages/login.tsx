@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Flame, Loader2, Mail } from "lucide-react";
+import { Flame, Loader2, Mail, Eye, EyeOff } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -35,6 +35,8 @@ export default function LoginPage() {
   const [isResending, setIsResending] = useState(false);
   const [resendEmail, setResendEmail] = useState("");
   const [showResendVerification, setShowResendVerification] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const { login, register } = useAuth();
   const { toast } = useToast();
 
@@ -66,6 +68,8 @@ export default function LoginPage() {
       if (error.message?.includes('verification') || error.message?.includes('verified')) {
         setResendEmail(data.email);
         setShowResendVerification(true);
+        // Store email for the email verification page
+        localStorage.setItem('pendingVerificationEmail', data.email);
       }
     } finally {
       setIsLoading(false);
@@ -81,6 +85,9 @@ export default function LoginPage() {
         name: data.name,
         phone: data.phone,
       });
+
+      // Store email for potential email verification page access
+      localStorage.setItem('pendingVerificationEmail', data.email);
 
       // Registration successful, switch back to login
       setIsSignUp(false);
@@ -206,12 +213,26 @@ export default function LoginPage() {
                     <div className="relative mt-1">
                       <Input
                         id="login-password"
-                        type="password"
+                        type={showLoginPassword ? "text" : "password"}
                         placeholder="Enter your password"
-                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
+                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors pr-12"
                         {...loginForm.register("password")}
                         data-testid="input-login-password"
                       />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-12 w-12 hover:bg-transparent"
+                        onClick={() => setShowLoginPassword(!showLoginPassword)}
+                        data-testid="button-toggle-login-password"
+                      >
+                        {showLoginPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-500" />
+                        )}
+                      </Button>
                     </div>
                     {loginForm.formState.errors.password && (
                       <p className="text-sm text-red-600 mt-1" data-testid="error-login-password">
@@ -303,14 +324,30 @@ export default function LoginPage() {
                     <Label htmlFor="register-password" className="text-sm font-medium text-gray-700">
                       Password
                     </Label>
-                    <Input
-                      id="register-password"
-                      type="password"
-                      placeholder="Create a strong password"
-                      className="mt-1 h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors"
-                      {...registerForm.register("password")}
-                      data-testid="input-register-password"
-                    />
+                    <div className="relative mt-1">
+                      <Input
+                        id="register-password"
+                        type={showRegisterPassword ? "text" : "password"}
+                        placeholder="Create a strong password"
+                        className="h-12 bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600 transition-colors pr-12"
+                        {...registerForm.register("password")}
+                        data-testid="input-register-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-12 w-12 hover:bg-transparent"
+                        onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                        data-testid="button-toggle-register-password"
+                      >
+                        {showRegisterPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-500" />
+                        )}
+                      </Button>
+                    </div>
                     {registerForm.formState.errors.password && (
                       <p className="text-sm text-red-600 mt-1" data-testid="error-register-password">
                         {registerForm.formState.errors.password.message}

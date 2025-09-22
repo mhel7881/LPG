@@ -90,6 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(data.token);
       setUser(data.user);
       localStorage.setItem("auth_token", data.token);
+      // Clear pending verification email since login was successful
+      localStorage.removeItem("pendingVerificationEmail");
 
       toast({
         title: "Welcome!",

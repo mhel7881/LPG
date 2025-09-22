@@ -319,6 +319,7 @@ export default function AdminInventory() {
     }
 
     const data = await response.json();
+    console.log('Upload successful, image URL:', data.imageUrl);
     return data.imageUrl;
   };
 
@@ -432,6 +433,35 @@ export default function AdminInventory() {
                       src={imagePreview}
                       alt="Product preview"
                       className="w-full h-48 object-cover rounded-lg border"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        // Create fallback for preview
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.preview-placeholder')) {
+                          const placeholder = document.createElement('div');
+                          placeholder.className = 'preview-placeholder w-full h-48 bg-gray-200 dark:bg-gray-700 rounded-lg border flex items-center justify-center';
+                          placeholder.innerHTML = `
+                            <div class="text-center">
+                              <svg class="h-12 w-12 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <p class="text-sm text-gray-500">Preview unavailable</p>
+                            </div>
+                          `;
+                          parent.appendChild(placeholder);
+                        }
+                      }}
+                      onLoad={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'block';
+                        // Remove any existing placeholder
+                        const parent = target.parentElement;
+                        const placeholder = parent?.querySelector('.preview-placeholder');
+                        if (placeholder) {
+                          placeholder.remove();
+                        }
+                      }}
                     />
                     <Button
                       type="button"
@@ -631,6 +661,35 @@ export default function AdminInventory() {
                           src={product.image}
                           alt={product.name}
                           className="w-full h-32 object-cover rounded-lg"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            // Create fallback placeholder
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('.image-placeholder')) {
+                              const placeholder = document.createElement('div');
+                              placeholder.className = 'image-placeholder w-full h-32 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center';
+                              placeholder.innerHTML = `
+                                <div class="text-center">
+                                  <svg class="h-8 w-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <p class="text-xs text-gray-500">Image unavailable</p>
+                                </div>
+                              `;
+                              parent.appendChild(placeholder);
+                            }
+                          }}
+                          onLoad={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'block';
+                            // Remove any existing placeholder
+                            const parent = target.parentElement;
+                            const placeholder = parent?.querySelector('.image-placeholder');
+                            if (placeholder) {
+                              placeholder.remove();
+                            }
+                          }}
                         />
                       </div>
                     )}
