@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useGeolocation, GeolocationPosition } from "@/hooks/use-geolocation";
 import { useLocation } from "wouter";
 import Map from "@/components/map";
+import { GeocodingService } from "@/lib/geocoding";
 import {
   User,
   MapPin,
@@ -83,12 +84,14 @@ export default function CustomerProfile() {
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [showLocationCapture, setShowLocationCapture] = useState(false);
   const [capturedLocation, setCapturedLocation] = useState<GeolocationPosition | null>(null);
+  const [mapCenter, setMapCenter] = useState<GeolocationPosition | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [enable2FA, setEnable2FA] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isGeocodingManual, setIsGeocodingManual] = useState(false);
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -180,6 +183,7 @@ export default function CustomerProfile() {
   useEffect(() => {
     if (position && showLocationCapture) {
       setCapturedLocation(position);
+      setMapCenter(position); // Update map center immediately
       addressForm.setValue("coordinates", {
         lat: position.latitude,
         lng: position.longitude
@@ -191,6 +195,60 @@ export default function CustomerProfile() {
       });
     }
   }, [position, showLocationCapture, addressForm, toast]);
+
+  // Auto-geocode when coordinates are manually entered
+  useEffect(() => {
+    const subscription = addressForm.watch((value, { name }) => {
+      // Only trigger when coordinates change
+      if (name === "coordinates.lat" || name === "coordinates.lng") {
+        const coordinates = value.coordinates;
+        const lat = coordinates?.lat;
+        const lng = coordinates?.lng;
+
+        // Only trigger geocoding if we have valid coordinates and not currently geocoding
+        if (lat && lng && !isGeocodingManual && lat !== 0 && lng !== 0) {
+          console.log('[Profile] Coordinates changed, starting geocoding:', { lat, lng });
+
+          const timeoutId = setTimeout(async () => {
+            try {
+              setIsGeocodingManual(true);
+              console.log('[Profile] Starting reverse geocoding for manual coordinates:', { lat, lng });
+
+              const addressResult = await GeocodingService.reverseGeocode(lat, lng);
+
+              if (addressResult) {
+                console.log('[Profile] Auto-populating address from manual coordinates:', addressResult);
+
+                // Always populate all address fields with the geocoded data
+                addressForm.setValue("street", addressResult.street || "");
+                addressForm.setValue("city", addressResult.city || "");
+                addressForm.setValue("province", addressResult.province || "");
+                addressForm.setValue("zipCode", addressResult.zipCode || "");
+
+                toast({
+                  title: "Address Found",
+                  description: addressResult.formattedAddress || "Address has been populated from your coordinates",
+                });
+              }
+            } catch (error) {
+              console.error('[Profile] Reverse geocoding failed for manual coordinates:', error);
+              toast({
+                title: "Address Lookup Failed",
+                description: "Coordinates saved successfully. You can manually enter your address details.",
+                variant: "default",
+              });
+            } finally {
+              setIsGeocodingManual(false);
+            }
+          }, 1000); // Reduced debounce to 1 second for faster response
+
+          return () => clearTimeout(timeoutId);
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [addressForm, isGeocodingManual, toast]);
 
   // Update form when geocoding is completed
   useEffect(() => {
@@ -389,6 +447,7 @@ export default function CustomerProfile() {
     setEditingAddress(address);
     setIsAddingAddress(true);
     setCapturedLocation(null);
+    setMapCenter(null); // Reset map center when editing
     addressForm.reset({
       label: address.label,
       street: address.street,
@@ -405,6 +464,7 @@ export default function CustomerProfile() {
     setEditingAddress(null);
     setShowLocationCapture(false);
     setCapturedLocation(null);
+    setMapCenter(null); // Reset map center
     addressForm.reset({
       label: "",
       street: "",
@@ -421,6 +481,7 @@ export default function CustomerProfile() {
 
     // Clear any previous captured location
     setCapturedLocation(null);
+    setMapCenter(null); // Reset map center
     setShowLocationCapture(true);
 
     try {
@@ -457,6 +518,7 @@ export default function CustomerProfile() {
 
   const handleLocationSelect = (position: GeolocationPosition) => {
     setCapturedLocation(position);
+    setMapCenter(position); // Update map center when location is selected
     addressForm.setValue("coordinates", {
       lat: position.latitude,
       lng: position.longitude
@@ -767,8 +829,16 @@ export default function CustomerProfile() {
                                 onChange={(e) => {
                                   const lat = parseFloat(e.target.value);
                                   const currentLng = addressForm.watch("coordinates")?.lng || 0;
-                                  if (!isNaN(lat)) {
-                                    addressForm.setValue("coordinates", { lat, lng: currentLng });
+                                  if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+                                    const newCoords = { lat, lng: currentLng };
+                                    addressForm.setValue("coordinates", newCoords);
+                                    // Update map center immediately
+                                    setMapCenter({ latitude: lat, longitude: currentLng });
+                                    setCapturedLocation({ latitude: lat, longitude: currentLng });
+                                    toast({
+                                      title: "Coordinates Updated",
+                                      description: `Location set to ${lat.toFixed(6)}, ${currentLng.toFixed(6)}`,
+                                    });
                                   }
                                 }}
                                 className="font-mono"
@@ -786,8 +856,16 @@ export default function CustomerProfile() {
                                 onChange={(e) => {
                                   const lng = parseFloat(e.target.value);
                                   const currentLat = addressForm.watch("coordinates")?.lat || 0;
-                                  if (!isNaN(lng)) {
-                                    addressForm.setValue("coordinates", { lat: currentLat, lng });
+                                  if (!isNaN(lng) && lng >= -180 && lng <= 180) {
+                                    const newCoords = { lat: currentLat, lng };
+                                    addressForm.setValue("coordinates", newCoords);
+                                    // Update map center immediately
+                                    setMapCenter({ latitude: currentLat, longitude: lng });
+                                    setCapturedLocation({ latitude: currentLat, longitude: lng });
+                                    toast({
+                                      title: "Coordinates Updated",
+                                      description: `Location set to ${currentLat.toFixed(6)}, ${lng.toFixed(6)}`,
+                                    });
                                   }
                                 }}
                                 className="font-mono"
@@ -868,17 +946,29 @@ export default function CustomerProfile() {
                                 type="button"
                                 variant="outline"
                                 onClick={handleCaptureLocation}
-                                disabled={loading || geocoding}
+                                disabled={loading || geocoding || isGeocodingManual}
                                 className="flex-1"
                                 data-testid="button-capture-location"
                               >
-                                {(loading || geocoding) ? (
+                                {(loading || geocoding || isGeocodingManual) ? (
                                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                 ) : (
                                   <Navigation className="h-4 w-4 mr-2" />
                                 )}
-                                {loading ? "Getting Location..." : geocoding ? "Converting to Address..." : "Use Current Location"}
+                                {loading ? "Getting Location..." : geocoding ? "Converting to Address..." : isGeocodingManual ? "Finding Address..." : "Use Current Location"}
                               </Button>
+
+                              {/* Show current location status */}
+                              {(showLocationCapture && !capturedLocation) || isGeocodingManual ? (
+                                <div className="flex-1 px-3 py-2 bg-blue-50 dark:bg-blue-950/20 rounded-md text-sm border border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center space-x-2">
+                                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                                    <span className="text-blue-800 dark:text-blue-200 font-medium">
+                                      {loading ? "Detecting your location..." : geocoding ? "Converting to address..." : isGeocodingManual ? "Finding address from coordinates..." : "Preparing location capture..."}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : null}
 
                               {capturedLocation && !geocoding && (
                                 <div className="flex-1 px-3 py-2 bg-muted rounded-md text-sm">
@@ -924,6 +1014,47 @@ export default function CustomerProfile() {
                               <p className="text-xs text-muted-foreground">
                                 If "Use Current Location" doesn't work, you can enter coordinates manually from Google Maps or another GPS app.
                               </p>
+
+                              {/* Quick Google Maps Link */}
+                              <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-md border border-green-200 dark:border-green-800">
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-xs font-medium text-green-800 dark:text-green-200">🚀 Quick Coordinate Finder</p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/50 border-green-300 dark:border-green-700"
+                                    onClick={() => window.open('https://maps.google.com', '_blank')}
+                                  >
+                                    Open Google Maps
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-green-700 dark:text-green-300 mb-2">
+                                  Click the button above to open Google Maps in a new tab, then:
+                                </p>
+                                <ol className="text-xs text-green-700 dark:text-green-300 space-y-1 list-decimal list-inside">
+                                  <li>Find your location on the map</li>
+                                  <li>Right-click (or long-press on mobile) on the exact spot</li>
+                                  <li>Click "What's here?" or "Drop a pin"</li>
+                                  <li>The coordinates will appear at the bottom (e.g., 14.599512, 120.984222)</li>
+                                  <li>Copy both numbers and paste them below</li>
+                                </ol>
+                                <p className="text-xs text-green-800 dark:text-green-200 font-medium mt-2">
+                                  ✅ No need to leave this page - just copy the coordinates and paste them here!
+                                </p>
+                              </div>
+
+                              <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                                <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">📍 Alternative Methods:</p>
+                                <ol className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-decimal list-inside">
+                                  <li>Use GPS coordinates from another mapping app</li>
+                                  <li>Get coordinates from a GPS device</li>
+                                  <li>Use latitude/longitude from any location service</li>
+                                </ol>
+                                <p className="text-xs text-green-700 dark:text-green-300 mt-2">
+                                  ✅ The map and address fields will update automatically when you enter coordinates!
+                                </p>
+                              </div>
                             </div>
 
                             {/* Map for location selection */}
@@ -955,7 +1086,7 @@ export default function CustomerProfile() {
                                   {/* Map Container */}
                                   <div className="relative">
                                     <Map
-                                      center={capturedLocation || (addressForm.watch("coordinates") ? {
+                                      center={mapCenter || capturedLocation || (addressForm.watch("coordinates") ? {
                                         latitude: addressForm.watch("coordinates")?.lat || 0,
                                         longitude: addressForm.watch("coordinates")?.lng || 0
                                       } : undefined)}
@@ -978,11 +1109,16 @@ export default function CustomerProfile() {
                                   {/* Location Info Footer */}
                                   <div className="p-3 border-t bg-muted/30">
                                     <p className="text-xs text-muted-foreground">
-                                      📍 Coordinates: {(capturedLocation || addressForm.watch("coordinates")) ? 
-                                        `${(capturedLocation?.latitude || addressForm.watch("coordinates")?.lat || 0).toFixed(6)}, ${(capturedLocation?.longitude || addressForm.watch("coordinates")?.lng || 0).toFixed(6)}` : 
+                                      📍 Coordinates: {(capturedLocation || addressForm.watch("coordinates")) ?
+                                        `${(capturedLocation?.latitude || addressForm.watch("coordinates")?.lat || 0).toFixed(6)}, ${(capturedLocation?.longitude || addressForm.watch("coordinates")?.lng || 0).toFixed(6)}` :
                                         'No location selected'
                                       }
                                     </p>
+                                    {capturedLocation && (
+                                      <p className="text-xs text-green-600 mt-1">
+                                        ✅ Location captured and map updated
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
