@@ -194,6 +194,7 @@ export const insertDeliveryDriverSchema = createInsertSchema(deliveryDrivers).om
 
 export const insertDeliveryScheduleSchema = createInsertSchema(deliverySchedules).omit({
   id: true,
+  nextDelivery: true,
   createdAt: true,
   updatedAt: true,
 });

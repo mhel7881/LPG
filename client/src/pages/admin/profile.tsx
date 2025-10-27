@@ -401,7 +401,17 @@ export default function AdminProfile() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="name">Full Name</Label>
-                    <Input id="name" value={user?.name || ""} readOnly data-testid="input-admin-profile-name" />
+                    <Input
+                      id="name"
+                      value={isEditingProfile ? undefined : user?.name || ""}
+                      {...(isEditingProfile ? profileForm.register("name") : { readOnly: true })}
+                      data-testid="input-admin-profile-name"
+                    />
+                    {isEditingProfile && profileForm.formState.errors.name && (
+                      <p className="text-sm text-destructive">
+                        {profileForm.formState.errors.name.message}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="email">Email</Label>
@@ -409,7 +419,17 @@ export default function AdminProfile() {
                   </div>
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" value={user?.phone || ""} readOnly data-testid="input-admin-profile-phone" />
+                    <Input
+                      id="phone"
+                      value={isEditingProfile ? undefined : user?.phone || ""}
+                      {...(isEditingProfile ? profileForm.register("phone") : { readOnly: true })}
+                      data-testid="input-admin-profile-phone"
+                    />
+                    {isEditingProfile && profileForm.formState.errors.phone && (
+                      <p className="text-sm text-destructive">
+                        {profileForm.formState.errors.phone.message}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="role">Account Type</Label>
@@ -417,13 +437,33 @@ export default function AdminProfile() {
                   </div>
                 </div>
                 <div className="pt-4">
-                  <Button
-                    onClick={() => setIsEditingProfile(true)}
-                    data-testid="button-edit-admin-profile"
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Profile
-                  </Button>
+                  {isEditingProfile ? (
+                    <div className="flex space-x-3">
+                      <Button
+                        onClick={profileForm.handleSubmit(onProfileSubmit)}
+                        disabled={updateProfileMutation.isPending}
+                        data-testid="button-save-admin-profile-inline"
+                      >
+                        {updateProfileMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Changes
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleCancelProfileEdit}
+                        data-testid="button-cancel-admin-profile-inline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setIsEditingProfile(true)}
+                      data-testid="button-edit-admin-profile"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Profile
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -712,72 +752,7 @@ export default function AdminProfile() {
               </CardContent>
             </Card>
 
-            {/* Profile Edit Form */}
-            {isEditingProfile && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Edit Profile</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="edit-name">Full Name</Label>
-                          <Input
-                            id="edit-name"
-                            placeholder="Enter your full name"
-                            {...profileForm.register("name")}
-                            data-testid="input-edit-admin-profile-name"
-                          />
-                          {profileForm.formState.errors.name && (
-                            <p className="text-sm text-destructive">
-                              {profileForm.formState.errors.name.message}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="edit-phone">Phone Number</Label>
-                          <Input
-                            id="edit-phone"
-                            type="tel"
-                            placeholder="Enter your phone number"
-                            {...profileForm.register("phone")}
-                            data-testid="input-edit-admin-profile-phone"
-                          />
-                          {profileForm.formState.errors.phone && (
-                            <p className="text-sm text-destructive">
-                              {profileForm.formState.errors.phone.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex space-x-3">
-                        <Button
-                          type="submit"
-                          disabled={updateProfileMutation.isPending}
-                          data-testid="button-save-admin-profile"
-                        >
-                          {updateProfileMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Save Changes
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleCancelProfileEdit}
-                          data-testid="button-cancel-admin-profile-edit"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </form>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
+            {/* Profile Edit Form - Now removed as editing is inline */}
           </TabsContent>
 
 

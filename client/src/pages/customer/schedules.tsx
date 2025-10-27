@@ -119,21 +119,15 @@ export default function CustomerSchedules() {
   // Create schedule mutation
   const createScheduleMutation = useMutation({
     mutationFn: async (scheduleData: any) => {
-      const nextDelivery = calculateNextDelivery(
-        scheduleData.frequency,
-        scheduleData.dayOfWeek,
-        scheduleData.dayOfMonth
-      );
-
       const response = await fetch("/api/schedules", {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          ...scheduleData,
-          nextDelivery,
-        }),
+        body: JSON.stringify(scheduleData),
       });
-      if (!response.ok) throw new Error("Failed to create schedule");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to create schedule" }));
+        throw new Error(errorData.message || "Failed to create schedule");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -249,6 +243,15 @@ export default function CustomerSchedules() {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.quantity || formData.quantity < 1) {
+      toast({
+        title: "Error",
+        description: "Quantity must be at least 1",
         variant: "destructive",
       });
       return;

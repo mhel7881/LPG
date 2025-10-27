@@ -129,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Auth routes
-  app.post('/api/auth/login', authLimiter, async (req, res) => {
+  app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = loginSchema.parse(req.body);
       const user = await storage.validateUser(email, password);
@@ -1082,11 +1082,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         userId: req.user.id
       };
-      
-      const schedule = await storage.createDeliverySchedule(scheduleData);
+
+      // Validate required fields
+      if (!scheduleData.name || !scheduleData.productId || !scheduleData.addressId) {
+        return res.status(400).json({ message: "Missing required fields: name, productId, addressId" });
+      }
+
+      // Validate frequency
+      if (!['weekly', 'biweekly', 'monthly'].includes(scheduleData.frequency)) {
+        return res.status(400).json({ message: "Invalid frequency. Must be 'weekly', 'biweekly', or 'monthly'" });
+      }
+
+      // Validate type
+      if (!['new', 'swap'].includes(scheduleData.type)) {
+        return res.status(400).json({ message: "Invalid type. Must be 'new' or 'swap'" });
+      }
+
+      // Validate quantity
+      if (!scheduleData.quantity || scheduleData.quantity < 1) {
+        return res.status(400).json({ message: "Quantity must be at least 1" });
+      }
+
+      // Calculate next delivery date
+      const calculateNextDelivery = (
+        frequency: "weekly" | "biweekly" | "monthly",
+        dayOfWeek?: number,
+        dayOfMonth?: number
+      ): string => {
+        const now = new Date();
+        let nextDelivery = new Date();
+
+        if (frequency === "monthly" && dayOfMonth) {
+          nextDelivery.setDate(dayOfMonth);
+          if (nextDelivery <= now) {
+            nextDelivery.setMonth(nextDelivery.getMonth() + 1);
+          }
+        } else if ((frequency === "weekly" || frequency === "biweekly") && dayOfWeek !== undefined) {
+          const days = (dayOfWeek - now.getDay() + 7) % 7;
+          nextDelivery.setDate(now.getDate() + days);
+          if (nextDelivery <= now) {
+            nextDelivery.setDate(nextDelivery.getDate() + (frequency === "weekly" ? 7 : 14));
+          }
+        }
+
+        return nextDelivery.toISOString();
+      };
+
+      // Calculate next delivery date
+      const nextDeliveryDate = calculateNextDelivery(
+        scheduleData.frequency,
+        scheduleData.dayOfWeek,
+        scheduleData.dayOfMonth
+      );
+
+      const schedule = await storage.createDeliverySchedule({
+        ...scheduleData,
+        nextDelivery: new Date(nextDeliveryDate),
+      });
       res.status(201).json(schedule);
     } catch (error: any) {
-      res.status(400).json({ message: error.message });
+      console.error('Create schedule error:', error);
+      res.status(500).json({ message: error.message || "Failed to create delivery schedule" });
     }
   });
 

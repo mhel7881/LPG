@@ -18,7 +18,8 @@ import {
   Clock,
   CheckCircle,
   Truck,
-  AlertCircle
+  AlertCircle,
+  Phone
 } from "lucide-react";
 
 interface Order {
@@ -278,6 +279,14 @@ export default function CustomerOrders() {
                               >
                                 <MessageSquare className="h-4 w-4 mr-2" />
                                 Chat Support
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => window.open('tel:+639123456789')}
+                                data-testid={`button-call-support-${order.id}`}
+                              >
+                                <Phone className="h-4 w-4" />
                               </Button>
                             </div>
 

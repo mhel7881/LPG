@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ export default function AdminInventory() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["/api/products"],
@@ -764,6 +766,7 @@ export default function AdminInventory() {
                       <Button
                         variant="outline"
                         size="icon"
+                        onClick={() => navigate(`/admin/analytics?product=${product.id}`)}
                         data-testid={`button-product-analytics-${product.id}`}
                       >
                         <TrendingUp className="h-4 w-4" />

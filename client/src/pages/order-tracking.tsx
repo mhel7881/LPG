@@ -10,6 +10,7 @@ import { getAuthHeaders } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useGeolocation, GeolocationPosition } from "@/hooks/use-geolocation";
 import { useWebSocket } from "@/hooks/use-websocket";
+import { useAuth } from "@/hooks/use-auth";
 import Map from "@/components/map";
 import {
   ArrowLeft,
@@ -72,6 +73,7 @@ export default function OrderTracking() {
   const { orderId } = useParams<{ orderId: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState<GeolocationPosition | null>(null);
   const [lastLocationUpdate, setLastLocationUpdate] = useState<Date | null>(null);
@@ -485,7 +487,7 @@ export default function OrderTracking() {
             <p className="text-muted-foreground mb-4">
               The order you're looking for doesn't exist or you don't have permission to view it.
             </p>
-            <Button onClick={() => setLocation("/orders")}>
+            <Button onClick={() => setLocation(user?.role === "admin" ? "/admin/orders" : "/customer/orders")}>
               Back to Orders
             </Button>
           </CardContent>
@@ -498,10 +500,10 @@ export default function OrderTracking() {
     <div className="container mx-auto px-4 py-6 space-y-6 pb-20 md:pb-6">
       {/* Header */}
       <div className="flex items-center space-x-4">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setLocation("/orders")}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setLocation(user?.role === "admin" ? "/admin/orders" : "/customer/orders")}
           data-testid="button-back-to-orders"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -777,11 +779,20 @@ export default function OrderTracking() {
 
       {/* Action Buttons */}
       <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-3">
-        <Button className="flex-1" data-testid="button-chat-support">
+        <Button
+          className="flex-1"
+          onClick={() => setLocation(`/chat?orderId=${orderId}`)}
+          data-testid="button-chat-support"
+        >
           <MessageSquare className="h-4 w-4 mr-2" />
           Chat with Support
         </Button>
-        <Button variant="outline" className="flex-1" data-testid="button-call-support">
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={() => window.open('tel:+639123456789')}
+          data-testid="button-call-support"
+        >
           <Phone className="h-4 w-4 mr-2" />
           Call Support
         </Button>
