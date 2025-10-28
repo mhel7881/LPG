@@ -20,6 +20,8 @@ import {
   type InsertDeliverySchedule,
   type DeliveryDriver,
   type InsertDeliveryDriver,
+  type PhysicalSale,
+  type InsertPhysicalSale,
   users,
   addresses,
   products,
@@ -28,7 +30,8 @@ import {
   chatMessages,
   notifications,
   deliverySchedules,
-  deliveryDrivers
+  deliveryDrivers,
+  physicalSales
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcrypt";
@@ -131,6 +134,10 @@ export interface IStorage {
   createDeliveryDriver(driver: any): Promise<any>;
   updateDeliveryDriver(id: string, updates: any): Promise<any>;
   deleteDeliveryDriver(id: string): Promise<boolean>;
+
+  // Physical Sales
+  getPhysicalSales(): Promise<any[]>;
+  createPhysicalSale(sale: InsertPhysicalSale): Promise<PhysicalSale>;
 
   // Seed data
   seedData(): Promise<void>;
@@ -609,10 +616,23 @@ export class DrizzleStorage implements IStorage {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [salesResult] = await db.select({
+    // Get online orders stats
+    const [onlineSalesResult] = await db.select({
       totalSales: sum(orders.totalAmount),
       totalOrders: count(orders.id),
     }).from(orders).where(eq(orders.status, 'delivered'));
+
+    // Get physical sales stats
+    const [physicalSalesResult] = await db.select({
+      totalSales: sum(physicalSales.totalAmount),
+      totalOrders: count(physicalSales.id),
+    }).from(physicalSales);
+
+    // Combine online and physical sales
+    const totalOnlineSales = Number(onlineSalesResult.totalSales) || 0;
+    const totalOnlineOrders = Number(onlineSalesResult.totalOrders) || 0;
+    const totalPhysicalSales = Number(physicalSalesResult.totalSales) || 0;
+    const totalPhysicalOrders = Number(physicalSalesResult.totalOrders) || 0;
 
     const [pendingResult] = await db.select({
       pendingOrders: count(orders.id),
@@ -623,8 +643,8 @@ export class DrizzleStorage implements IStorage {
     }).from(users).where(eq(users.role, 'customer'));
 
     return {
-      totalSales: Number(salesResult.totalSales) || 0,
-      totalOrders: Number(salesResult.totalOrders) || 0,
+      totalSales: totalOnlineSales + totalPhysicalSales,
+      totalOrders: totalOnlineOrders + totalPhysicalOrders,
       pendingOrders: Number(pendingResult.pendingOrders) || 0,
       activeCustomers: Number(customersResult.activeCustomers) || 0,
     };
@@ -832,6 +852,39 @@ export class DrizzleStorage implements IStorage {
       .where(eq(deliveryDrivers.id, id))
       .returning();
     return result.length > 0;
+  }
+
+  // Physical Sales
+  async getPhysicalSales(): Promise<any[]> {
+    const result = await db.select({
+      id: physicalSales.id,
+      productId: physicalSales.productId,
+      type: physicalSales.type,
+      quantity: physicalSales.quantity,
+      unitPrice: physicalSales.unitPrice,
+      totalAmount: physicalSales.totalAmount,
+      customerName: physicalSales.customerName,
+      customerPhone: physicalSales.customerPhone,
+      notes: physicalSales.notes,
+      createdAt: physicalSales.createdAt,
+      product: {
+        id: products.id,
+        name: products.name,
+        weight: products.weight,
+        newPrice: products.newPrice,
+        swapPrice: products.swapPrice,
+      }
+    })
+    .from(physicalSales)
+    .innerJoin(products, eq(physicalSales.productId, products.id))
+    .orderBy(desc(physicalSales.createdAt));
+
+    return result;
+  }
+
+  async createPhysicalSale(sale: InsertPhysicalSale): Promise<PhysicalSale> {
+    const result = await db.insert(physicalSales).values(sale).returning();
+    return result[0];
   }
 
   async seedData(): Promise<void> {

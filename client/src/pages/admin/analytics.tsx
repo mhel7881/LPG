@@ -80,6 +80,17 @@ export default function AdminAnalytics() {
     },
   });
 
+  const { data: physicalSales = [], isLoading: physicalSalesLoading } = useQuery({
+    queryKey: ["/api/physical-sales"],
+    queryFn: async () => {
+      const response = await fetch("/api/physical-sales", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch physical sales");
+      return response.json();
+    },
+  });
+
   const { data: products = [] } = useQuery({
     queryKey: ["/api/products"],
     queryFn: async () => {
@@ -110,12 +121,23 @@ export default function AdminAnalytics() {
   );
 
   const deliveredOrders = filteredOrders.filter((order: Order) => order.status === "delivered");
-  const totalRevenue = deliveredOrders.reduce((sum: number, order: Order) => 
+  const onlineRevenue = deliveredOrders.reduce((sum: number, order: Order) =>
     sum + parseFloat(order.totalAmount), 0
   );
 
-  // Calculate best selling products
-  const productSales = deliveredOrders.reduce((acc: any, order: Order) => {
+  // Filter physical sales by date range
+  const filteredPhysicalSales = physicalSales.filter((sale: any) =>
+    new Date(sale.createdAt) >= getDateRange()
+  );
+
+  const physicalRevenue = filteredPhysicalSales.reduce((sum: number, sale: any) =>
+    sum + parseFloat(sale.totalAmount), 0
+  );
+
+  const totalRevenue = onlineRevenue + physicalRevenue;
+
+  // Calculate best selling products (online orders)
+  const onlineProductSales = deliveredOrders.reduce((acc: any, order: Order) => {
     const productId = order.productId;
     if (!acc[productId]) {
       acc[productId] = {
@@ -129,6 +151,33 @@ export default function AdminAnalytics() {
     acc[productId].revenue += parseFloat(order.totalAmount);
     return acc;
   }, {});
+
+  // Calculate best selling products (physical sales)
+  const physicalProductSales = filteredPhysicalSales.reduce((acc: any, sale: any) => {
+    const productId = sale.productId;
+    if (!acc[productId]) {
+      acc[productId] = {
+        productId,
+        product: sale.product,
+        quantity: 0,
+        revenue: 0,
+      };
+    }
+    acc[productId].quantity += sale.quantity;
+    acc[productId].revenue += parseFloat(sale.totalAmount);
+    return acc;
+  }, {});
+
+  // Combine online and physical sales
+  const productSales = { ...onlineProductSales };
+  Object.keys(physicalProductSales).forEach(productId => {
+    if (productSales[productId]) {
+      productSales[productId].quantity += physicalProductSales[productId].quantity;
+      productSales[productId].revenue += physicalProductSales[productId].revenue;
+    } else {
+      productSales[productId] = physicalProductSales[productId];
+    }
+  });
 
   const bestSellingProducts = Object.values(productSales)
     .sort((a: any, b: any) => b.quantity - a.quantity)
@@ -153,17 +202,25 @@ export default function AdminAnalytics() {
       const orderDate = new Date(order.createdAt);
       return orderDate.toDateString() === date.toDateString();
     });
-    const dayRevenue = dayOrders.reduce((sum: number, order: Order) => 
+    const dayPhysicalSales = filteredPhysicalSales.filter((sale: any) => {
+      const saleDate = new Date(sale.createdAt);
+      return saleDate.toDateString() === date.toDateString();
+    });
+    const dayOnlineRevenue = dayOrders.reduce((sum: number, order: Order) =>
       sum + parseFloat(order.totalAmount), 0
+    );
+    const dayPhysicalRevenue = dayPhysicalSales.reduce((sum: number, sale: any) =>
+      sum + parseFloat(sale.totalAmount), 0
     );
     dailySales.push({
       date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      revenue: dayRevenue,
-      orders: dayOrders.length,
+      revenue: dayOnlineRevenue + dayPhysicalRevenue,
+      orders: dayOrders.length + dayPhysicalSales.length,
     });
   }
 
-  const avgOrderValue = productOrders.length > 0 ? productRevenue / productOrders.length : 0;
+  const totalTransactions = deliveredOrders.length + filteredPhysicalSales.length;
+  const avgOrderValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
   const conversionRate = orders.length > 0 ? (deliveredOrders.length / orders.length) * 100 : 0;
 
   const handleRefresh = () => {
@@ -530,9 +587,12 @@ export default function AdminAnalytics() {
             <CardContent>
               <div className="space-y-3">
                 {["new", "swap"].map((type) => {
-                  const count = deliveredOrders.filter((order: Order) => order.type === type).length;
-                  const percentage = deliveredOrders.length > 0 ? (count / deliveredOrders.length) * 100 : 0;
-                  
+                  const onlineCount = deliveredOrders.filter((order: Order) => order.type === type).length;
+                  const physicalCount = filteredPhysicalSales.filter((sale: any) => sale.type === type).length;
+                  const totalCount = onlineCount + physicalCount;
+                  const totalTransactions = deliveredOrders.length + filteredPhysicalSales.length;
+                  const percentage = totalTransactions > 0 ? (totalCount / totalTransactions) * 100 : 0;
+
                   return (
                     <div key={type} className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
@@ -543,7 +603,7 @@ export default function AdminAnalytics() {
                       </div>
                       <div className="text-right">
                         <span className="font-medium" data-testid={`text-type-count-${type}`}>
-                          {count}
+                          {totalCount}
                         </span>
                         <span className="text-xs text-muted-foreground ml-1">
                           ({percentage.toFixed(1)}%)

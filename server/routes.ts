@@ -1244,6 +1244,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   });
 
+  // Physical Store Sales routes
+  app.get('/api/physical-sales', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const physicalSales = await storage.getPhysicalSales();
+      res.json(physicalSales);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch physical sales' });
+    }
+  });
+
+  app.post('/api/physical-sales', authenticateToken, requireAdmin, async (req: any, res) => {
+    try {
+      const { productId, type, quantity, customerName, customerPhone, notes } = req.body;
+
+      // Validate required fields
+      if (!productId || !type || !quantity) {
+        return res.status(400).json({ message: 'Product ID, type, and quantity are required' });
+      }
+
+      if (!['new', 'swap'].includes(type)) {
+        return res.status(400).json({ message: 'Type must be either "new" or "swap"' });
+      }
+
+      if (quantity < 1) {
+        return res.status(400).json({ message: 'Quantity must be at least 1' });
+      }
+
+      // Get product details
+      const product = await storage.getProduct(productId);
+      if (!product) {
+        return res.status(404).json({ message: 'Product not found' });
+      }
+
+      // Check stock availability
+      if (product.stock < quantity) {
+        return res.status(400).json({ message: 'Insufficient stock' });
+      }
+
+      // Calculate pricing
+      const unitPrice = type === 'new' ? parseFloat(product.newPrice) : parseFloat(product.swapPrice);
+      const totalAmount = unitPrice * quantity;
+
+      // Create physical sale record
+      const physicalSale = await storage.createPhysicalSale({
+        productId,
+        type,
+        quantity,
+        unitPrice: unitPrice.toString(),
+        totalAmount: totalAmount.toString(),
+        customerName: customerName || null,
+        customerPhone: customerPhone || null,
+        notes: notes || null,
+      });
+
+      // Update product stock
+      await storage.updateProduct(productId, {
+        stock: product.stock - quantity,
+      });
+
+      res.status(201).json(physicalSale);
+    } catch (error) {
+      console.error('Physical sale creation error:', error);
+      res.status(500).json({ message: 'Failed to create physical sale' });
+    }
+  });
+
   app.post('/api/upload/image', authenticateToken, upload.single('file'), async (req: any, res: any) => {
     try {
       if (!req.file) {

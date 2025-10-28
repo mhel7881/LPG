@@ -28,6 +28,7 @@ import AdminDashboard from "@/pages/admin/dashboard";
 import AdminOrders from "@/pages/admin/orders";
 import AdminInventory from "@/pages/admin/inventory";
 import AdminAnalytics from "@/pages/admin/analytics";
+import AdminPhysicalStore from "@/pages/admin/physical-store";
 // import AdminPOS from "@/pages/admin/pos";
 import AdminLocationTracking from "@/pages/admin/location-tracking";
 import AdminProfile from "@/pages/admin/profile";
@@ -201,6 +202,12 @@ function AppRoutes() {
             <Route path="/admin/analytics">
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminAnalytics />
+              </ProtectedRoute>
+            </Route>
+
+            <Route path="/admin/physical-store">
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminPhysicalStore />
               </ProtectedRoute>
             </Route>
 

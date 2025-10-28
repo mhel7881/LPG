@@ -24,7 +24,8 @@ import {
   User,
   Menu,
   X,
-  Calendar
+  Calendar,
+  Store
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -184,6 +185,16 @@ export function Navigation() {
         >
           <Settings className="h-4 w-4 mr-2" />
           Analytics
+        </Button>
+      </Link>
+      <Link href="/admin/physical-store" data-testid="link-admin-physical-store">
+        <Button
+          variant={location === "/admin/physical-store" ? "default" : "ghost"}
+          size="sm"
+          className="justify-start"
+        >
+          <Store className="h-4 w-4 mr-2" />
+          Physical Store
         </Button>
       </Link>
       {/* <Link href="/admin/pos" data-testid="link-admin-pos">
@@ -486,6 +497,16 @@ export function Navigation() {
                   >
                     <Package className="h-4 w-4 mb-1" />
                     <span className="text-xs">Inventory</span>
+                  </Button>
+                </Link>
+                <Link href="/admin/physical-store" data-testid="link-mobile-admin-physical-store">
+                  <Button
+                    variant={location === "/admin/physical-store" ? "default" : "ghost"}
+                    size="sm"
+                    className="flex flex-col h-auto py-2 px-4"
+                  >
+                    <Store className="h-4 w-4 mb-1" />
+                    <span className="text-xs">Physical Store</span>
                   </Button>
                 </Link>
                 <Link href="/admin/profile" data-testid="link-mobile-admin-profile">

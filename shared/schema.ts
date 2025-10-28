@@ -194,9 +194,26 @@ export const insertDeliveryDriverSchema = createInsertSchema(deliveryDrivers).om
 
 export const insertDeliveryScheduleSchema = createInsertSchema(deliverySchedules).omit({
   id: true,
-  nextDelivery: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const physicalSales = pgTable("physical_sales", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: uuid("product_id").references(() => products.id).notNull(),
+  type: text("type").notNull(), // "new" | "swap"
+  quantity: integer("quantity").default(1).notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+});
+
+export const insertPhysicalSaleSchema = createInsertSchema(physicalSales).omit({
+  id: true,
+  createdAt: true,
 });
 
 // Login schema
@@ -224,4 +241,6 @@ export type DeliveryDriver = typeof deliveryDrivers.$inferSelect;
 export type InsertDeliveryDriver = z.infer<typeof insertDeliveryDriverSchema>;
 export type DeliverySchedule = typeof deliverySchedules.$inferSelect;
 export type InsertDeliverySchedule = z.infer<typeof insertDeliveryScheduleSchema>;
+export type PhysicalSale = typeof physicalSales.$inferSelect;
+export type InsertPhysicalSale = z.infer<typeof insertPhysicalSaleSchema>;
 export type LoginRequest = z.infer<typeof loginSchema>;
