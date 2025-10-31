@@ -303,7 +303,14 @@ export class DrizzleStorage implements IStorage {
   }
 
   async createOrder(order: InsertOrder): Promise<Order> {
-    const orderNumber = `GF-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    // Fetch product details to get the name
+    const product = await this.getProduct(order.productId);
+    if (!product) {
+      throw new Error(`Product with id ${order.productId} not found`);
+    }
+
+    const orderNumber = `GF-${product.name}- ${String(Date.now()).slice(-6)}`;
+
     const result = await db.insert(orders).values({
       ...order,
       orderNumber,
