@@ -1,6 +1,7 @@
 // server/index.ts
 import "dotenv/config";
 import express2 from "express";
+import cors from "cors";
 
 // server/routes.ts
 import { createServer } from "http";
@@ -135,6 +136,21 @@ var chatMessages = pgTable("chat_messages", {
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").default(sql`now()`).notNull()
 });
+var deliveryDrivers = pgTable("delivery_drivers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  licenseNumber: text("license_number").notNull(),
+  vehicleType: text("vehicle_type").notNull(),
+  // "motorcycle", "van", "truck"
+  plateNumber: text("plate_number").notNull(),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("4.8"),
+  // 1.0 to 5.0
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`now()`).notNull()
+});
 var notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").references(() => users.id).notNull(),
@@ -188,10 +204,32 @@ var insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
   createdAt: true
 });
+var insertDeliveryDriverSchema = createInsertSchema(deliveryDrivers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
 var insertDeliveryScheduleSchema = createInsertSchema(deliverySchedules).omit({
   id: true,
   createdAt: true,
   updatedAt: true
+});
+var physicalSales = pgTable("physical_sales", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: uuid("product_id").references(() => products.id).notNull(),
+  type: text("type").notNull(),
+  // "new" | "swap"
+  quantity: integer("quantity").default(1).notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull()
+});
+var insertPhysicalSaleSchema = createInsertSchema(physicalSales).omit({
+  id: true,
+  createdAt: true
 });
 var loginSchema = z.object({
   email: z.string().email(),
@@ -334,7 +372,11 @@ var DrizzleStorage = class {
     return result[0];
   }
   async createOrder(order) {
-    const orderNumber = `GF-${(/* @__PURE__ */ new Date()).getFullYear()}-${String(Date.now()).slice(-6)}`;
+    const product = await this.getProduct(order.productId);
+    if (!product) {
+      throw new Error(`Product with id ${order.productId} not found`);
+    }
+    const orderNumber = `GF-${product.name}- ${String(Date.now()).slice(-6)}`;
     const result = await db.insert(orders).values({
       ...order,
       orderNumber
@@ -559,10 +601,18 @@ var DrizzleStorage = class {
   async getDashboardStats() {
     const today = /* @__PURE__ */ new Date();
     today.setHours(0, 0, 0, 0);
-    const [salesResult] = await db.select({
+    const [onlineSalesResult] = await db.select({
       totalSales: sum(orders.totalAmount),
       totalOrders: count(orders.id)
     }).from(orders).where(eq(orders.status, "delivered"));
+    const [physicalSalesResult] = await db.select({
+      totalSales: sum(physicalSales.totalAmount),
+      totalOrders: count(physicalSales.id)
+    }).from(physicalSales);
+    const totalOnlineSales = Number(onlineSalesResult.totalSales) || 0;
+    const totalOnlineOrders = Number(onlineSalesResult.totalOrders) || 0;
+    const totalPhysicalSales = Number(physicalSalesResult.totalSales) || 0;
+    const totalPhysicalOrders = Number(physicalSalesResult.totalOrders) || 0;
     const [pendingResult] = await db.select({
       pendingOrders: count(orders.id)
     }).from(orders).where(eq(orders.status, "pending"));
@@ -570,8 +620,8 @@ var DrizzleStorage = class {
       activeCustomers: count(users.id)
     }).from(users).where(eq(users.role, "customer"));
     return {
-      totalSales: Number(salesResult.totalSales) || 0,
-      totalOrders: Number(salesResult.totalOrders) || 0,
+      totalSales: totalOnlineSales + totalPhysicalSales,
+      totalOrders: totalOnlineOrders + totalPhysicalOrders,
       pendingOrders: Number(pendingResult.pendingOrders) || 0,
       activeCustomers: Number(customersResult.activeCustomers) || 0
     };
@@ -698,6 +748,52 @@ var DrizzleStorage = class {
     }).where(eq(users.id, id)).returning();
     return result[0];
   }
+  // Delivery Drivers
+  async getDeliveryDrivers() {
+    return await db.select().from(deliveryDrivers).orderBy(desc(deliveryDrivers.createdAt));
+  }
+  async createDeliveryDriver(driver) {
+    const result = await db.insert(deliveryDrivers).values(driver).returning();
+    return result[0];
+  }
+  async updateDeliveryDriver(id, updates) {
+    const result = await db.update(deliveryDrivers).set({
+      ...updates,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq(deliveryDrivers.id, id)).returning();
+    return result[0];
+  }
+  async deleteDeliveryDriver(id) {
+    const result = await db.delete(deliveryDrivers).where(eq(deliveryDrivers.id, id)).returning();
+    return result.length > 0;
+  }
+  // Physical Sales
+  async getPhysicalSales() {
+    const result = await db.select({
+      id: physicalSales.id,
+      productId: physicalSales.productId,
+      type: physicalSales.type,
+      quantity: physicalSales.quantity,
+      unitPrice: physicalSales.unitPrice,
+      totalAmount: physicalSales.totalAmount,
+      customerName: physicalSales.customerName,
+      customerPhone: physicalSales.customerPhone,
+      notes: physicalSales.notes,
+      createdAt: physicalSales.createdAt,
+      product: {
+        id: products.id,
+        name: products.name,
+        weight: products.weight,
+        newPrice: products.newPrice,
+        swapPrice: products.swapPrice
+      }
+    }).from(physicalSales).innerJoin(products, eq(physicalSales.productId, products.id)).orderBy(desc(physicalSales.createdAt));
+    return result;
+  }
+  async createPhysicalSale(sale) {
+    const result = await db.insert(physicalSales).values(sale).returning();
+    return result[0];
+  }
   async seedData() {
     try {
       const testResult = await db.select().from(users).limit(1);
@@ -767,36 +863,72 @@ var DrizzleStorage = class {
         coordinates: JSON.stringify({ lat: 11.9674, lng: 121.9248 }),
         isDefault: false
       });
-    }
-    const existingProducts = await this.getProducts();
-    if (existingProducts.length === 0) {
-      await this.createProduct({
-        name: "7kg LPG Tank",
-        description: "Compact tank ideal for small families",
-        weight: "7kg",
-        newPrice: "950.00",
-        swapPrice: "650.00",
-        stock: 8,
-        isActive: true
-      });
-      await this.createProduct({
-        name: "11kg LPG Tank",
-        description: "Premium quality LPG tank perfect for home cooking",
-        weight: "11kg",
-        newPrice: "1200.00",
-        swapPrice: "900.00",
-        stock: 45,
-        isActive: true
-      });
-      await this.createProduct({
-        name: "22kg LPG Tank",
-        description: "Heavy-duty tank for commercial use",
-        weight: "22kg",
-        newPrice: "2400.00",
-        swapPrice: "1800.00",
-        stock: 2,
-        isActive: true
-      });
+      const existingDrivers = await this.getDeliveryDrivers();
+      if (existingDrivers.length === 0) {
+        await this.createDeliveryDriver({
+          name: "Juan Dela Cruz",
+          phone: "+63 912 345 6789",
+          email: "juan.delacruz@gasflow.com",
+          licenseNumber: "ABC-123-XYZ",
+          vehicleType: "motorcycle",
+          plateNumber: "XYZ-456",
+          rating: "4.8",
+          isActive: true
+        });
+        await this.createDeliveryDriver({
+          name: "Maria Santos",
+          phone: "+63 917 987 6543",
+          email: "maria.santos@gasflow.com",
+          licenseNumber: "DEF-456-UVW",
+          vehicleType: "van",
+          plateNumber: "UVW-789",
+          rating: "4.9",
+          isActive: true
+        });
+        await this.createDeliveryDriver({
+          name: "Pedro Reyes",
+          phone: "+63 918 555 1234",
+          email: "pedro.reyes@gasflow.com",
+          licenseNumber: "GHI-789-RST",
+          vehicleType: "motorcycle",
+          plateNumber: "RST-012",
+          rating: "4.7",
+          isActive: true
+        });
+        console.log("Sample delivery drivers created");
+      }
+      const addresses2 = await this.getUserAddresses(customerId);
+      const homeAddress = addresses2.find((addr) => addr.label === "Home");
+      if (homeAddress) {
+        await this.createOrder({
+          customerId,
+          productId: "sample-product-1",
+          // This will be replaced with actual product ID
+          addressId: homeAddress.id,
+          quantity: 1,
+          type: "new",
+          unitPrice: "1000.00",
+          totalAmount: "1000.00",
+          status: "pending",
+          paymentMethod: "cash",
+          paymentStatus: "pending",
+          notes: "Sample order for testing"
+        });
+        await this.createOrder({
+          customerId,
+          productId: "sample-product-2",
+          addressId: homeAddress.id,
+          quantity: 2,
+          type: "new",
+          unitPrice: "800.00",
+          totalAmount: "1600.00",
+          status: "out_for_delivery",
+          paymentMethod: "gcash",
+          paymentStatus: "paid",
+          notes: "Urgent delivery - track this order"
+        });
+        console.log("Sample orders created for testing");
+      }
     }
   }
 };
@@ -1123,7 +1255,7 @@ async function registerRoutes(app2) {
   } catch (error) {
     console.error("Seeding failed:", error);
   }
-  app2.post("/api/auth/login", authLimiter, async (req, res) => {
+  app2.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = loginSchema.parse(req.body);
       const user = await storage.validateUser(email, password);
@@ -1332,9 +1464,22 @@ async function registerRoutes(app2) {
         ...req.body,
         userId: req.user.id
       });
+      console.log("[Address Creation] Creating address with data:", {
+        userId: req.user.id,
+        label: addressData.label,
+        street: addressData.street,
+        city: addressData.city,
+        coordinates: addressData.coordinates,
+        hasCoordinates: !!addressData.coordinates
+      });
       const address = await storage.createAddress(addressData);
+      console.log("[Address Creation] Address created successfully:", {
+        id: address.id,
+        coordinates: address.coordinates
+      });
       res.status(201).json(address);
     } catch (error) {
+      console.error("[Address Creation] Error creating address:", error);
       res.status(400).json({ message: "Invalid address data" });
     }
   });
@@ -1342,24 +1487,52 @@ async function registerRoutes(app2) {
     try {
       const { id } = req.params;
       const updates = req.body;
+      console.log("[Address Update] User:", req.user.id, "Address ID:", id, "Updates:", updates);
+      const existingAddress = await storage.getUserAddresses(req.user.id);
+      const addressExists = existingAddress.find((addr) => addr.id === id);
+      if (!addressExists) {
+        console.log("[Address Update] Address not found or not owned by user");
+        return res.status(404).json({ message: "Address not found or access denied" });
+      }
       const address = await storage.updateAddress(id, updates);
       if (!address) {
-        return res.status(404).json({ message: "Address not found" });
+        console.log("[Address Update] Update failed");
+        return res.status(500).json({ message: "Failed to update address" });
       }
+      console.log("[Address Update] Success:", address);
       res.json(address);
     } catch (error) {
+      console.error("[Address Update] Error:", error);
       res.status(400).json({ message: "Failed to update address" });
     }
   });
   app2.delete("/api/users/addresses/:id", authenticateToken, async (req, res) => {
     try {
       const { id } = req.params;
+      console.log("[Address Delete] User:", req.user.id, "Address ID:", id);
+      const existingAddresses = await storage.getUserAddresses(req.user.id);
+      const addressExists = existingAddresses.find((addr) => addr.id === id);
+      if (!addressExists) {
+        console.log("[Address Delete] Address not found or not owned by user");
+        return res.status(404).json({ message: "Address not found or access denied" });
+      }
+      const ordersWithAddress = await storage.getOrdersByCustomer(req.user.id);
+      const addressInUse = ordersWithAddress.some((order) => order.addressId === id);
+      if (addressInUse) {
+        console.log("[Address Delete] Address is in use by orders, cannot delete");
+        return res.status(400).json({
+          message: "Cannot delete address because it is being used in existing orders. Please contact support if you need to change this address."
+        });
+      }
       const success = await storage.deleteAddress(id);
       if (!success) {
-        return res.status(404).json({ message: "Address not found" });
+        console.log("[Address Delete] Delete failed");
+        return res.status(500).json({ message: "Failed to delete address" });
       }
+      console.log("[Address Delete] Success");
       res.json({ message: "Address deleted successfully" });
     } catch (error) {
+      console.error("[Address Delete] Error:", error);
       res.status(400).json({ message: "Failed to delete address" });
     }
   });
@@ -1507,6 +1680,21 @@ async function registerRoutes(app2) {
       res.status(500).json({ message: "Failed to fetch orders" });
     }
   });
+  app2.get("/api/orders/:id", authenticateToken, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const order = await storage.getOrderById(id);
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      if (req.user.role !== "admin" && order.customerId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json(order);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch order" });
+    }
+  });
   app2.post("/api/orders", authenticateToken, async (req, res) => {
     try {
       const orderData = insertOrderSchema.parse({
@@ -1557,17 +1745,84 @@ async function registerRoutes(app2) {
   app2.get("/api/admin/addresses", authenticateToken, requireAdmin, async (req, res) => {
     try {
       const addresses2 = await storage.getAllAddressesWithUsers();
+      console.log("[Admin Addresses] Fetched addresses count:", addresses2.length);
+      addresses2.forEach((addr, index) => {
+        console.log(`[Admin Addresses] Address ${index + 1}:`, {
+          id: addr.id,
+          user: addr.user.name,
+          coordinates: addr.coordinates,
+          hasCoordinates: !!addr.coordinates
+        });
+      });
       res.json(addresses2);
     } catch (error) {
+      console.error("[Admin Addresses] Error fetching addresses:", error);
       res.status(500).json({ message: "Failed to fetch addresses" });
     }
   });
   app2.get("/api/admin/orders/tracking", authenticateToken, requireAdmin, async (req, res) => {
     try {
       const orders2 = await storage.getOrdersWithLocationData();
+      console.log("[Admin Orders Tracking] Fetched orders with location data count:", orders2.length);
+      orders2.forEach((order, index) => {
+        console.log(`[Admin Orders Tracking] Order ${index + 1}:`, {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customer: order.customer.name,
+          addressCoordinates: order.address?.coordinates,
+          hasCoordinates: !!order.address?.coordinates
+        });
+      });
       res.json(orders2);
     } catch (error) {
+      console.error("[Admin Orders Tracking] Error fetching orders:", error);
       res.status(500).json({ message: "Failed to fetch orders for tracking" });
+    }
+  });
+  app2.get("/api/admin/delivery-drivers", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const drivers = await storage.getDeliveryDrivers();
+      res.json(drivers);
+    } catch (error) {
+      console.error("[Delivery Drivers] Error fetching drivers:", error);
+      res.status(500).json({ message: "Failed to fetch delivery drivers" });
+    }
+  });
+  app2.post("/api/admin/delivery-drivers", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const driverData = req.body;
+      const driver = await storage.createDeliveryDriver(driverData);
+      res.status(201).json(driver);
+    } catch (error) {
+      console.error("[Delivery Drivers] Error creating driver:", error);
+      res.status(400).json({ message: "Failed to create delivery driver" });
+    }
+  });
+  app2.put("/api/admin/delivery-drivers/:id", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const driver = await storage.updateDeliveryDriver(id, updates);
+      if (!driver) {
+        return res.status(404).json({ message: "Delivery driver not found" });
+      }
+      res.json(driver);
+    } catch (error) {
+      console.error("[Delivery Drivers] Error updating driver:", error);
+      res.status(400).json({ message: "Failed to update delivery driver" });
+    }
+  });
+  app2.delete("/api/admin/delivery-drivers/:id", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteDeliveryDriver(id);
+      if (!success) {
+        return res.status(404).json({ message: "Delivery driver not found" });
+      }
+      res.json({ message: "Delivery driver deleted successfully" });
+    } catch (error) {
+      console.error("[Delivery Drivers] Error deleting driver:", error);
+      res.status(400).json({ message: "Failed to delete delivery driver" });
     }
   });
   app2.get("/api/chat/messages", authenticateToken, async (req, res) => {
@@ -1760,10 +2015,48 @@ async function registerRoutes(app2) {
         ...req.body,
         userId: req.user.id
       };
-      const schedule = await storage.createDeliverySchedule(scheduleData);
+      if (!scheduleData.name || !scheduleData.productId || !scheduleData.addressId) {
+        return res.status(400).json({ message: "Missing required fields: name, productId, addressId" });
+      }
+      if (!["weekly", "biweekly", "monthly"].includes(scheduleData.frequency)) {
+        return res.status(400).json({ message: "Invalid frequency. Must be 'weekly', 'biweekly', or 'monthly'" });
+      }
+      if (!["new", "swap"].includes(scheduleData.type)) {
+        return res.status(400).json({ message: "Invalid type. Must be 'new' or 'swap'" });
+      }
+      if (!scheduleData.quantity || scheduleData.quantity < 1) {
+        return res.status(400).json({ message: "Quantity must be at least 1" });
+      }
+      const calculateNextDelivery = (frequency, dayOfWeek, dayOfMonth) => {
+        const now = /* @__PURE__ */ new Date();
+        let nextDelivery = /* @__PURE__ */ new Date();
+        if (frequency === "monthly" && dayOfMonth) {
+          nextDelivery.setDate(dayOfMonth);
+          if (nextDelivery <= now) {
+            nextDelivery.setMonth(nextDelivery.getMonth() + 1);
+          }
+        } else if ((frequency === "weekly" || frequency === "biweekly") && dayOfWeek !== void 0) {
+          const days = (dayOfWeek - now.getDay() + 7) % 7;
+          nextDelivery.setDate(now.getDate() + days);
+          if (nextDelivery <= now) {
+            nextDelivery.setDate(nextDelivery.getDate() + (frequency === "weekly" ? 7 : 14));
+          }
+        }
+        return nextDelivery.toISOString();
+      };
+      const nextDeliveryDate = calculateNextDelivery(
+        scheduleData.frequency,
+        scheduleData.dayOfWeek,
+        scheduleData.dayOfMonth
+      );
+      const schedule = await storage.createDeliverySchedule({
+        ...scheduleData,
+        nextDelivery: new Date(nextDeliveryDate)
+      });
       res.status(201).json(schedule);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      console.error("Create schedule error:", error);
+      res.status(500).json({ message: error.message || "Failed to create delivery schedule" });
     }
   });
   app2.put("/api/schedules/:id", authenticateToken, async (req, res) => {
@@ -1853,16 +2146,96 @@ async function registerRoutes(app2) {
       }
     }
   });
+  app2.get("/api/physical-sales", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const physicalSales2 = await storage.getPhysicalSales();
+      res.json(physicalSales2);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch physical sales" });
+    }
+  });
+  app2.post("/api/physical-sales", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { productId, type, quantity, customerName, customerPhone, notes } = req.body;
+      if (!productId || !type || !quantity) {
+        return res.status(400).json({ message: "Product ID, type, and quantity are required" });
+      }
+      if (!["new", "swap"].includes(type)) {
+        return res.status(400).json({ message: 'Type must be either "new" or "swap"' });
+      }
+      if (quantity < 1) {
+        return res.status(400).json({ message: "Quantity must be at least 1" });
+      }
+      const product = await storage.getProduct(productId);
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
+      if (product.stock < quantity) {
+        return res.status(400).json({ message: "Insufficient stock" });
+      }
+      const unitPrice = type === "new" ? parseFloat(product.newPrice) : parseFloat(product.swapPrice);
+      const totalAmount = unitPrice * quantity;
+      const physicalSale = await storage.createPhysicalSale({
+        productId,
+        type,
+        quantity,
+        unitPrice: unitPrice.toString(),
+        totalAmount: totalAmount.toString(),
+        customerName: customerName || null,
+        customerPhone: customerPhone || null,
+        notes: notes || null
+      });
+      await storage.updateProduct(productId, {
+        stock: product.stock - quantity
+      });
+      res.status(201).json(physicalSale);
+    } catch (error) {
+      console.error("Physical sale creation error:", error);
+      res.status(500).json({ message: "Failed to create physical sale" });
+    }
+  });
   app2.post("/api/upload/image", authenticateToken, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
-      const imageUrl = `https://via.placeholder.com/400x300?text=${encodeURIComponent(req.file.originalname)}`;
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_ANON_KEY;
+      console.log("Supabase URL:", supabaseUrl);
+      console.log("Supabase Key exists:", !!supabaseKey);
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Supabase configuration missing");
+      }
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      console.log("Supabase client created successfully");
+      const fileExt = req.file.originalname.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      console.log("File details:", {
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        generatedFileName: fileName
+      });
+      console.log("Attempting to upload to bucket: images");
+      const { data, error } = await supabase.storage.from("images").upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false
+      });
+      console.log("Upload result:", { data, error });
+      if (error) {
+        console.error("Supabase upload error:", error);
+        console.error("Error details:", JSON.stringify(error, null, 2));
+        throw new Error(`Failed to upload image to storage: ${error.message}`);
+      }
+      const { data: urlData } = supabase.storage.from("images").getPublicUrl(fileName);
+      if (!urlData.publicUrl) {
+        throw new Error("Failed to get public URL");
+      }
       res.json({
         message: "Image uploaded successfully",
-        imageUrl,
-        filename: req.file.originalname,
+        imageUrl: urlData.publicUrl,
+        filename: fileName,
         size: req.file.size
       });
     } catch (error) {
@@ -1994,6 +2367,11 @@ function serveStatic(app2) {
 // server/index.ts
 process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0";
 var app = express2();
+app.use(cors({
+  origin: true,
+  // Allow all origins in development
+  credentials: true
+}));
 app.use(express2.json());
 app.use(express2.urlencoded({ extended: false }));
 app.set("trust proxy", 1);
