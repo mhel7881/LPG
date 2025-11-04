@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Address API Test</title>
+</head>
+<body>
+    <h1>Address API Test</h1>
+    <div id="result"></div>
+
+    <script>
+        const resultDiv = document.getElementById('result');
+
+        async function testAddressAPI() {
+            resultDiv.innerHTML = 'Testing address API...';
+
+            try {
+                // First, try to login to get a token
+                resultDiv.innerHTML += '<br>🔄 Attempting login...';
+                const loginResponse = await fetch('http://localhost:5000/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'customer@demo.com',
+                        password: 'demo123'
+                    })
+                });
+
+                if (!loginResponse.ok) {
+                    const errorText = await loginResponse.text();
+                    throw new Error(`Login failed: ${loginResponse.status} - ${errorText}`);
+                }
+
+                const loginData = await loginResponse.json();
+                const token = loginData.token;
+
+                resultDiv.innerHTML += '<br>✅ Login successful';
+
+                // Now test getting addresses
+                resultDiv.innerHTML += '<br>🔄 Getting addresses...';
+                const getResponse = await fetch('http://localhost:5000/api/users/addresses', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!getResponse.ok) {
+                    const errorText = await getResponse.text();
+                    throw new Error(`Get addresses failed: ${getResponse.status} - ${errorText}`);
+                }
+
+                const addresses = await getResponse.json();
+                resultDiv.innerHTML += `<br>✅ Get addresses successful: ${addresses.length} addresses found`;
+
+                if (addresses.length > 0) {
+                    const firstAddress = addresses[0];
+                    resultDiv.innerHTML += `<br>✅ First address ID: ${firstAddress.id}`;
+
+                    // Test updating the address
+                    resultDiv.innerHTML += '<br>🔄 Updating address...';
+                    const updateResponse = await fetch(`http://localhost:5000/api/users/addresses/${firstAddress.id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            label: firstAddress.label + ' (Updated)'
+                        })
+                    });
+
+                    if (!updateResponse.ok) {
+                        const errorText = await updateResponse.text();
+                        resultDiv.innerHTML += `<br>❌ Update address failed: ${updateResponse.status} - ${errorText}`;
+                    } else {
+                        const updatedAddress = await updateResponse.json();
+                        resultDiv.innerHTML += `<br>✅ Update address successful: ${updatedAddress.label}`;
+                    }
+
+                    // Test deleting the address
+                    resultDiv.innerHTML += '<br>🔄 Testing delete address...';
+                    const deleteResponse = await fetch(`http://localhost:5000/api/users/addresses/${firstAddress.id}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (!deleteResponse.ok) {
+                        const errorText = await deleteResponse.text();
+                        resultDiv.innerHTML += `<br>⚠️ Delete address failed (expected if address is in use): ${deleteResponse.status} - ${errorText}`;
+                    } else {
+                        const deleteResult = await deleteResponse.json();
+                        resultDiv.innerHTML += `<br>✅ Delete address successful: ${deleteResult.message}`;
+                    }
+                }
+
+            } catch (error) {
+                resultDiv.innerHTML += `<br>❌ Error: ${error.message}`;
+                console.error('Test error:', error);
+            }
+        }
+
+        testAddressAPI();
+    </script>
+</body>
+</html>

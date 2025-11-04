@@ -1,0 +1,137 @@
+‎Frontend: React (Vite or Next.js), TypeScript, Tailwind (NativeWind not needed anymore), Framer Motion for animations.
+‎
+‎Backend: Express + Drizzle ORM (migrations), sessions + JWT auth validation.
+‎
+‎Auth/DB/Realtime/Storage: Supabase (Auth, Postgres, RLS, Realtime, Storage).
+‎
+‎Realtime: WebSockets (for chat & order tracking) + Supabase Realtime if needed.
+‎
+‎Push Notifications:
+‎
+‎Web Push API + Service Worker → notifications even when browser is closed.
+‎
+‎
+‎Payments: COD + GCash (placeholder integration).
+‎
+‎Offline Support: IndexedDB (cart, cached products, offline-first browsing).
+‎
+‎
+‎
+‎---
+‎
+‎📌 Core Requirements
+‎
+‎Auth
+‎
+‎Single login screen (role inferred from Supabase claims).
+‎
+‎
+‎Admin
+‎
+‎Upload/manage LPG products (image, name, weight, price, description).
+‎
+‎POS & inventory.
+‎
+‎Low-stock alerts.
+‎
+‎Edit swap price.
+‎
+‎Real-time customer location.
+‎
+‎Sales analytics (daily income, trends, best sellers).
+‎
+‎Chat with customers.
+‎
+‎Digital receipts.
+‎
+‎Dashboard.
+‎
+‎Logout.
+‎
+‎
+‎Customer
+‎
+‎Signup/login.
+‎
+‎Profile with editable addresses.
+‎
+‎Cart & checkout (new or swap, default ₱900 but admin can update).
+‎
+‎Order history with receipts.
+‎
+‎Real-time order tracking.
+‎
+‎Chat with Admin.
+‎
+‎Push notifications (order status updates, promos).
+‎
+‎Scheduled recurring deliveries.
+‎
+‎Logout in profile.
+‎
+‎
+‎UI
+‎
+‎Mobile-first (responsive).
+‎
+‎Multi-theme (Light/Dark, primary Blue).
+‎
+‎Smooth animations, accessible.
+‎
+‎
+‎Security
+‎
+‎Rate limiting, CAPTCHA, account lockouts (brute force prevention).
+‎
+‎Supabase RLS policies.
+‎
+‎JWT validation.
+‎
+‎Secure storage of images/receipts in Supabase Storage.
+‎
+‎
+‎Data
+‎
+‎Drizzle migrations.
+‎
+‎Seeded default admin (admin / admin123, must reset).
+‎
+‎
+‎
+‎---
+‎
+‎📌 Extra Features Added (per your request)
+‎
+‎✅ IndexedDB — offline persistence:
+‎
+‎Store cart & product catalog locally.
+‎
+‎Works offline, syncs with Supabase when back online.
+‎
+‎
+‎✅ Web Push Notifications (Service Worker) —
+‎
+‎Order status notifications, promos, reminders.
+‎
+‎Works even if browser/tab is closed, as long as the user allowed notifications.
+‎
+‎
+‎
+‎---
+‎
+‎📌 Deliverables
+‎
+‎Clean architecture diagram.
+‎
+‎Database schema + Drizzle migrations.
+‎
+‎REST + WebSocket APIs.
+‎
+‎Full React web screens/components.
+‎
+‎Seed scripts (default admin).
+‎
+‎Automated tests (basic).
+‎
+‎README with deployment steps (Vercel/Netlify for frontend, Supabase config, Express backend deployment).
+‎

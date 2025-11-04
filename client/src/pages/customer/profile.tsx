@@ -1,0 +1,1548 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/hooks/use-auth";
+import { getAuthHeaders } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
+import { useGeolocation, GeolocationPosition } from "@/hooks/use-geolocation";
+import { useLocation } from "wouter";
+import Map from "@/components/map";
+import { GeocodingService } from "@/lib/geocoding";
+import {
+  User,
+  MapPin,
+  Plus,
+  Edit,
+  Trash2,
+  Bell,
+  Shield,
+  LogOut,
+  Navigation,
+  Loader2,
+  X,
+  Eye,
+  EyeOff
+} from "lucide-react";
+
+const addressSchema = z.object({
+  label: z.string().min(1, "Label is required"),
+  street: z.string().min(1, "Street address is required"),
+  city: z.string().min(1, "City is required"),
+  province: z.string().min(1, "Province is required"),
+  zipCode: z.string().min(1, "ZIP code is required"),
+  coordinates: z.object({
+    lat: z.number().min(-90, "Invalid latitude").max(90, "Invalid latitude"),
+    lng: z.number().min(-180, "Invalid longitude").max(180, "Invalid longitude")
+  }, { required_error: "GPS coordinates are required for delivery tracking" }),
+  isDefault: z.boolean().default(false),
+});
+
+const profileSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  phone: z.string().optional(),
+});
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(1, "Please confirm your password"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+type AddressFormData = z.infer<typeof addressSchema>;
+type ProfileFormData = z.infer<typeof profileSchema>;
+type PasswordFormData = z.infer<typeof passwordSchema>;
+
+interface Address {
+  id: string;
+  label: string;
+  street: string;
+  city: string;
+  province: string;
+  zipCode: string;
+  coordinates?: {
+    lat: number;
+    lng: number;
+  };
+  isDefault: boolean;
+}
+
+export default function CustomerProfile() {
+  const [location] = useLocation();
+  const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [showLocationCapture, setShowLocationCapture] = useState(false);
+  const [capturedLocation, setCapturedLocation] = useState<GeolocationPosition | null>(null);
+  const [mapCenter, setMapCenter] = useState<GeolocationPosition | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [enable2FA, setEnable2FA] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isGeocodingManual, setIsGeocodingManual] = useState(false);
+  const { user, logout } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { position, error, loading, geocoding, address, getCurrentPosition } = useGeolocation();
+
+  // Parse query parameters to determine active tab
+  const urlParams = new URLSearchParams(location.split('?')[1] || '');
+  const activeTab = urlParams.get('tab') || 'profile';
+
+  const { data: addresses = [], isLoading: addressesLoading } = useQuery({
+    queryKey: ["/api/users/addresses"],
+    queryFn: async () => {
+      const response = await fetch("/api/users/addresses", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch addresses");
+      return response.json();
+    },
+  });
+
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["/api/notifications"],
+    queryFn: async () => {
+      const response = await fetch("/api/notifications", {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch notifications");
+      return response.json();
+    },
+  });
+
+  // Delete notification mutation
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await fetch(`/api/notifications/${notificationId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to delete notification");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      toast({
+        title: "Notification Deleted",
+        description: "The notification has been removed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete notification",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addressForm = useForm<AddressFormData>({
+    resolver: zodResolver(addressSchema),
+    defaultValues: {
+      label: "",
+      street: "",
+      city: "",
+      province: "",
+      zipCode: "",
+      coordinates: { lat: 0, lng: 0 },
+      isDefault: false,
+    },
+  });
+
+  const profileForm = useForm<ProfileFormData>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      name: user?.name || "",
+      phone: user?.phone || "",
+    },
+  });
+
+  const passwordForm = useForm<PasswordFormData>({
+    resolver: zodResolver(passwordSchema),
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
+
+  // Update form when geolocation is captured
+  useEffect(() => {
+    if (position && showLocationCapture) {
+      setCapturedLocation(position);
+      setMapCenter(position); // Update map center immediately
+      addressForm.setValue("coordinates", {
+        lat: position.latitude,
+        lng: position.longitude
+      });
+      setShowLocationCapture(false);
+      toast({
+        title: "Location Captured",
+        description: `Coordinates: ${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}`,
+      });
+    }
+  }, [position, showLocationCapture, addressForm, toast]);
+
+  // Auto-geocode when coordinates are manually entered
+  useEffect(() => {
+    const subscription = addressForm.watch((value, { name }) => {
+      // Only trigger when coordinates change
+      if (name === "coordinates.lat" || name === "coordinates.lng") {
+        const coordinates = value.coordinates;
+        const lat = coordinates?.lat;
+        const lng = coordinates?.lng;
+
+        // Only trigger geocoding if we have valid coordinates and not currently geocoding
+        if (lat && lng && !isGeocodingManual && lat !== 0 && lng !== 0) {
+          console.log('[Profile] Coordinates changed, starting geocoding:', { lat, lng });
+
+          const timeoutId = setTimeout(async () => {
+            try {
+              setIsGeocodingManual(true);
+              console.log('[Profile] Starting reverse geocoding for manual coordinates:', { lat, lng });
+
+              const addressResult = await GeocodingService.reverseGeocode(lat, lng);
+
+              if (addressResult) {
+                console.log('[Profile] Auto-populating address from manual coordinates:', addressResult);
+
+                // Always populate all address fields with the geocoded data
+                addressForm.setValue("street", addressResult.street || "");
+                addressForm.setValue("city", addressResult.city || "");
+                addressForm.setValue("province", addressResult.province || "");
+                addressForm.setValue("zipCode", addressResult.zipCode || "");
+
+                toast({
+                  title: "Address Found",
+                  description: addressResult.formattedAddress || "Address has been populated from your coordinates",
+                });
+              }
+            } catch (error) {
+              console.error('[Profile] Reverse geocoding failed for manual coordinates:', error);
+              toast({
+                title: "Address Lookup Failed",
+                description: "Coordinates saved successfully. You can manually enter your address details.",
+                variant: "default",
+              });
+            } finally {
+              setIsGeocodingManual(false);
+            }
+          }, 1000); // Reduced debounce to 1 second for faster response
+
+          return () => clearTimeout(timeoutId);
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [addressForm, isGeocodingManual, toast]);
+
+  // Update form when geocoding is completed
+  useEffect(() => {
+    if (address && !geocoding && capturedLocation) {
+      console.log('[Profile] Populating address form with geocoded data:', address);
+
+      // Auto-populate address fields
+      if (address.street) {
+        addressForm.setValue("street", address.street);
+      }
+      if (address.city) {
+        addressForm.setValue("city", address.city);
+      }
+      if (address.province) {
+        addressForm.setValue("province", address.province);
+      }
+      if (address.zipCode) {
+        addressForm.setValue("zipCode", address.zipCode);
+      }
+
+      toast({
+        title: "Address Found",
+        description: address.formattedAddress || "Address has been populated from your location",
+      });
+    }
+  }, [address, geocoding, capturedLocation, addressForm, toast]);
+
+  // Handle geocoding failure but keep coordinates
+  useEffect(() => {
+    if (error && error.code === -1 && capturedLocation && !address) {
+      console.log('[Profile] Geocoding failed but coordinates captured');
+
+      toast({
+        title: "Location Captured",
+        description: "Coordinates saved successfully! Address lookup failed, but you can manually enter your address details below.",
+        variant: "default",
+      });
+    }
+  }, [error, capturedLocation, address, toast]);
+
+  // Handle geolocation and geocoding errors
+  useEffect(() => {
+    if (error) {
+      setShowLocationCapture(false);
+
+      let errorMessage = error.message;
+      let errorTitle = "Location Error";
+
+      // Provide more helpful error messages
+      if (error.code === 1) { // PERMISSION_DENIED
+        errorMessage = "Location access was denied. Please allow location access in your browser settings and try again.";
+        errorTitle = "Location Access Required";
+      } else if (error.code === 2) { // POSITION_UNAVAILABLE
+        errorMessage = "Location information is unavailable. Please check your GPS settings and try again.";
+        errorTitle = "Location Unavailable";
+      } else if (error.code === 3) { // TIMEOUT
+        errorMessage = "Location request timed out. Please try again.";
+        errorTitle = "Location Timeout";
+      } else if (error.code === -1) { // Geocoding error
+        errorTitle = "Address Conversion Failed";
+        // Keep the original message for geocoding errors
+      }
+
+      toast({
+        title: errorTitle,
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  }, [error, toast]);
+
+  const createAddressMutation = useMutation({
+    mutationFn: async (data: AddressFormData) => {
+      const response = await fetch("/api/users/addresses", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to create address");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
+      setIsAddingAddress(false);
+      addressForm.reset({
+        label: "",
+        street: "",
+        city: "",
+        province: "",
+        zipCode: "",
+        coordinates: { lat: 0, lng: 0 },
+        isDefault: false,
+      });
+      toast({
+        title: "Address Added",
+        description: "Your new address has been saved successfully with GPS coordinates for accurate delivery tracking.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add address",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateAddressMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<AddressFormData> }) => {
+      console.log('[Client Address Update] Starting update for ID:', id, 'Data:', data);
+      const response = await fetch(`/api/users/addresses/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      console.log('[Client Address Update] Response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Client Address Update] Error response:', errorText);
+        throw new Error(`Failed to update address: ${response.status} ${errorText}`);
+      }
+      const result = await response.json();
+      console.log('[Client Address Update] Success:', result);
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
+      setEditingAddress(null);
+      addressForm.reset({
+        label: "",
+        street: "",
+        city: "",
+        province: "",
+        zipCode: "",
+        coordinates: { lat: 0, lng: 0 },
+        isDefault: false,
+      });
+      toast({
+        title: "Address Updated",
+        description: "Your address has been updated successfully with GPS coordinates for accurate delivery tracking.",
+      });
+    },
+    onError: (error: any) => {
+      console.error('[Client Address Update] Mutation error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update address",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteAddressMutation = useMutation({
+    mutationFn: async (id: string) => {
+      console.log('[Client Address Delete] Starting delete for ID:', id);
+      const response = await fetch(`/api/users/addresses/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      console.log('[Client Address Delete] Response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Client Address Delete] Error response:', errorText);
+        throw new Error(`Failed to delete address: ${response.status} ${errorText}`);
+      }
+      const result = await response.json();
+      console.log('[Client Address Delete] Success:', result);
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/addresses"] });
+      toast({
+        title: "Address Deleted",
+        description: "Your address has been removed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      console.error('[Client Address Delete] Mutation error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete address",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onAddressSubmit = (data: AddressFormData) => {
+    if (editingAddress) {
+      updateAddressMutation.mutate({ id: editingAddress.id, data });
+    } else {
+      createAddressMutation.mutate(data);
+    }
+  };
+
+  const handleEditAddress = (address: Address) => {
+    setEditingAddress(address);
+    setIsAddingAddress(true);
+    setCapturedLocation(null);
+    setMapCenter(null); // Reset map center when editing
+    addressForm.reset({
+      label: address.label,
+      street: address.street,
+      city: address.city,
+      province: address.province,
+      zipCode: address.zipCode,
+      coordinates: address.coordinates || { lat: 0, lng: 0 },
+      isDefault: address.isDefault,
+    });
+  };
+
+  const handleCancelAddressForm = () => {
+    setIsAddingAddress(false);
+    setEditingAddress(null);
+    setShowLocationCapture(false);
+    setCapturedLocation(null);
+    setMapCenter(null); // Reset map center
+    addressForm.reset({
+      label: "",
+      street: "",
+      city: "",
+      province: "",
+      zipCode: "",
+      coordinates: { lat: 0, lng: 0 },
+      isDefault: false,
+    });
+  };
+
+  const handleCaptureLocation = async () => {
+    console.log('[Profile] Starting location capture...');
+
+    // Clear any previous captured location
+    setCapturedLocation(null);
+    setMapCenter(null); // Reset map center
+    setShowLocationCapture(true);
+
+    try {
+      console.log('[Profile] Calling getCurrentPosition...');
+      // Get current position and geocode - browser will automatically ask for permission
+      const addressResult = await getCurrentPosition();
+
+      if (addressResult) {
+        console.log('[Profile] Location and address captured successfully:', addressResult);
+        toast({
+          title: "Location Captured Successfully",
+          description: `Address: ${addressResult.formattedAddress || 'Coordinates saved'}`,
+        });
+      } else {
+        console.log('[Profile] Location captured but geocoding failed - coordinates should still be saved');
+        toast({
+          title: "Location Captured",
+          description: "Coordinates saved successfully. Address lookup failed but you can enter details manually.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('[Profile] Error capturing location:', error);
+      setShowLocationCapture(false);
+
+      // Show specific error message
+      toast({
+        title: "Location Error",
+        description: error instanceof Error ? error.message : "Failed to get your location",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleLocationSelect = (position: GeolocationPosition) => {
+    setCapturedLocation(position);
+    setMapCenter(position); // Update map center when location is selected
+    addressForm.setValue("coordinates", {
+      lat: position.latitude,
+      lng: position.longitude
+    });
+    toast({
+      title: "Location Selected",
+      description: `Coordinates: ${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}`,
+    });
+  };
+
+  // Profile update mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: ProfileFormData) => {
+      const response = await fetch("/api/users/me", {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update profile");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      setIsEditingProfile(false);
+      profileForm.reset();
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onProfileSubmit = (data: ProfileFormData) => {
+    updateProfileMutation.mutate(data);
+  };
+
+  const handleCancelProfileEdit = () => {
+    setIsEditingProfile(false);
+    profileForm.reset({
+      name: user?.name || "",
+      phone: user?.phone || "",
+    });
+  };
+
+  // Password change mutation
+  const updatePasswordMutation = useMutation({
+    mutationFn: async (data: PasswordFormData) => {
+      const response = await fetch("/api/auth/change-password", {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to change password");
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsChangingPassword(false);
+      passwordForm.reset();
+      toast({
+        title: "Password Updated",
+        description: "Your password has been changed successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to change password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onPasswordSubmit = (data: PasswordFormData) => {
+    updatePasswordMutation.mutate(data);
+  };
+
+  // Update form when user data changes
+  useEffect(() => {
+    if (user && isEditingProfile) {
+      profileForm.reset({
+        name: user.name || "",
+        phone: user.phone || "",
+      });
+    }
+  }, [user, isEditingProfile, profileForm]);
+
+  return (
+    <div className="container mx-auto px-4 py-6 pb-20 md:pb-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center space-x-4">
+          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+            <span className="text-primary-foreground text-xl font-bold">
+              {user?.name.slice(0, 2).toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-user-name">{user?.name}</h1>
+            <p className="text-muted-foreground" data-testid="text-user-email">{user?.email}</p>
+          </div>
+        </div>
+
+        {/* Profile Tabs */}
+        <Tabs defaultValue={activeTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="profile" data-testid="tab-profile">Profile</TabsTrigger>
+            <TabsTrigger value="addresses" data-testid="tab-addresses">Addresses</TabsTrigger>
+            <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="security" data-testid="tab-security">Security</TabsTrigger>
+          </TabsList>
+
+          {/* Profile Tab */}
+          <TabsContent value="profile">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <User className="h-4 w-4 mr-2" />
+                  Personal Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input id="name" value={user?.name || ""} readOnly data-testid="input-profile-name" />
+                  </div>
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" value={user?.email || ""} readOnly data-testid="input-profile-email" />
+                  </div>
+                  <div>
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input id="phone" value={user?.phone || ""} readOnly data-testid="input-profile-phone" />
+                  </div>
+                  <div>
+                    <Label htmlFor="role">Account Type</Label>
+                    <Input id="role" value={user?.role || ""} readOnly className="capitalize" data-testid="input-profile-role" />
+                  </div>
+                </div>
+                <div className="pt-4">
+                  <Button
+                    onClick={() => setIsEditingProfile(true)}
+                    data-testid="button-edit-profile"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Profile Edit Form */}
+            {isEditingProfile && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Edit Profile</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="edit-name">Full Name</Label>
+                          <Input
+                            id="edit-name"
+                            placeholder="Enter your full name"
+                            {...profileForm.register("name")}
+                            data-testid="input-edit-profile-name"
+                          />
+                          {profileForm.formState.errors.name && (
+                            <p className="text-sm text-destructive">
+                              {profileForm.formState.errors.name.message}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-phone">Phone Number</Label>
+                          <Input
+                            id="edit-phone"
+                            type="tel"
+                            placeholder="Enter your phone number"
+                            {...profileForm.register("phone")}
+                            data-testid="input-edit-profile-phone"
+                          />
+                          {profileForm.formState.errors.phone && (
+                            <p className="text-sm text-destructive">
+                              {profileForm.formState.errors.phone.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex space-x-3">
+                        <Button
+                          type="submit"
+                          disabled={updateProfileMutation.isPending}
+                          data-testid="button-save-profile"
+                        >
+                          {updateProfileMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Save Changes
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCancelProfileEdit}
+                          data-testid="button-cancel-profile-edit"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </TabsContent>
+
+          {/* Addresses Tab */}
+          <TabsContent value="addresses">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold">Delivery Addresses</h2>
+                <Button 
+                  onClick={() => setIsAddingAddress(true)}
+                  data-testid="button-add-address"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Address
+                </Button>
+              </div>
+
+              {/* Add/Edit Address Form */}
+              {isAddingAddress && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        {editingAddress ? "Edit Address" : "Add New Address"}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={addressForm.handleSubmit(onAddressSubmit)} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="label">Address Label</Label>
+                            <Input
+                              id="label"
+                              placeholder="e.g., Home, Work"
+                              {...addressForm.register("label")}
+                              data-testid="input-address-label"
+                            />
+                            {addressForm.formState.errors.label && (
+                              <p className="text-sm text-destructive">
+                                {addressForm.formState.errors.label.message}
+                              </p>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label htmlFor="zipCode">ZIP Code</Label>
+                            <Input
+                              id="zipCode"
+                              placeholder="ZIP Code"
+                              {...addressForm.register("zipCode")}
+                              data-testid="input-address-zipcode"
+                            />
+                            {addressForm.formState.errors.zipCode && (
+                              <p className="text-sm text-destructive">
+                                {addressForm.formState.errors.zipCode.message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* GPS Coordinates - Always visible and auto-filled */}
+                        <div className="space-y-3">
+                          <Label className="text-base font-medium flex items-center">
+                            <Navigation className="h-4 w-4 mr-2 text-primary" />
+                            GPS Coordinates (Required for Delivery Tracking)
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            These coordinates will be used by our delivery team to locate your address accurately on the map.
+                          </p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label htmlFor="latitude" className="text-sm font-medium">Latitude *</Label>
+                              <Input
+                                id="latitude"
+                                type="number"
+                                step="0.000001"
+                                placeholder="e.g., 14.599512"
+                                value={addressForm.watch("coordinates")?.lat || ""}
+                                onChange={(e) => {
+                                  const lat = parseFloat(e.target.value);
+                                  const currentLng = addressForm.watch("coordinates")?.lng || 0;
+                                  if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+                                    const newCoords = { lat, lng: currentLng };
+                                    addressForm.setValue("coordinates", newCoords);
+                                    // Update map center immediately
+                                    setMapCenter({ latitude: lat, longitude: currentLng });
+                                    setCapturedLocation({ latitude: lat, longitude: currentLng });
+                                    toast({
+                                      title: "Coordinates Updated",
+                                      description: `Location set to ${lat.toFixed(6)}, ${currentLng.toFixed(6)}`,
+                                    });
+                                  }
+                                }}
+                                className="font-mono"
+                                data-testid="input-latitude"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="longitude" className="text-sm font-medium">Longitude *</Label>
+                              <Input
+                                id="longitude"
+                                type="number"
+                                step="0.000001"
+                                placeholder="e.g., 120.984222"
+                                value={addressForm.watch("coordinates")?.lng || ""}
+                                onChange={(e) => {
+                                  const lng = parseFloat(e.target.value);
+                                  const currentLat = addressForm.watch("coordinates")?.lat || 0;
+                                  if (!isNaN(lng) && lng >= -180 && lng <= 180) {
+                                    const newCoords = { lat: currentLat, lng };
+                                    addressForm.setValue("coordinates", newCoords);
+                                    // Update map center immediately
+                                    setMapCenter({ latitude: currentLat, longitude: lng });
+                                    setCapturedLocation({ latitude: currentLat, longitude: lng });
+                                    toast({
+                                      title: "Coordinates Updated",
+                                      description: `Location set to ${currentLat.toFixed(6)}, ${lng.toFixed(6)}`,
+                                    });
+                                  }
+                                }}
+                                className="font-mono"
+                                data-testid="input-longitude"
+                              />
+                            </div>
+                          </div>
+                          {addressForm.watch("coordinates") && (
+                            <p className="text-xs text-green-600 flex items-center">
+                              <Navigation className="h-3 w-3 mr-1" />
+                              ✓ Coordinates set: {addressForm.watch("coordinates")?.lat?.toFixed(6)}, {addressForm.watch("coordinates")?.lng?.toFixed(6)}
+                            </p>
+                          )}
+                          {addressForm.formState.errors.coordinates && (
+                            <p className="text-sm text-destructive">
+                              {addressForm.formState.errors.coordinates.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <Label htmlFor="street">Street Address</Label>
+                          <Input
+                            id="street"
+                            placeholder="Street, Building, Unit"
+                            {...addressForm.register("street")}
+                            data-testid="input-address-street"
+                          />
+                          {addressForm.formState.errors.street && (
+                            <p className="text-sm text-destructive">
+                              {addressForm.formState.errors.street.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="city">City</Label>
+                            <Input
+                              id="city"
+                              placeholder="City"
+                              {...addressForm.register("city")}
+                              data-testid="input-address-city"
+                            />
+                            {addressForm.formState.errors.city && (
+                              <p className="text-sm text-destructive">
+                                {addressForm.formState.errors.city.message}
+                              </p>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label htmlFor="province">Province</Label>
+                            <Input
+                              id="province"
+                              placeholder="Province"
+                              {...addressForm.register("province")}
+                              data-testid="input-address-province"
+                            />
+                            {addressForm.formState.errors.province && (
+                              <p className="text-sm text-destructive">
+                                {addressForm.formState.errors.province.message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Location Capture Section */}
+                        <div className="space-y-4">
+                          <div className="border-t pt-4">
+                            <Label className="text-base font-medium">Location (Optional)</Label>
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Use your current location to automatically fill in your address details for accurate deliveries
+                            </p>
+                            
+                            <div className="flex flex-col space-y-3 md:flex-row md:space-y-0 md:space-x-3">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleCaptureLocation}
+                                disabled={loading || geocoding || isGeocodingManual}
+                                className="flex-1"
+                                data-testid="button-capture-location"
+                              >
+                                {(loading || geocoding || isGeocodingManual) ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Navigation className="h-4 w-4 mr-2" />
+                                )}
+                                {loading ? "Getting Location..." : geocoding ? "Converting to Address..." : isGeocodingManual ? "Finding Address..." : "Use Current Location"}
+                              </Button>
+
+                              {/* Show current location status */}
+                              {(showLocationCapture && !capturedLocation) || isGeocodingManual ? (
+                                <div className="flex-1 px-3 py-2 bg-blue-50 dark:bg-blue-950/20 rounded-md text-sm border border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center space-x-2">
+                                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                                    <span className="text-blue-800 dark:text-blue-200 font-medium">
+                                      {loading ? "Detecting your location..." : geocoding ? "Converting to address..." : isGeocodingManual ? "Finding address from coordinates..." : "Preparing location capture..."}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {capturedLocation && !geocoding && (
+                                <div className="flex-1 px-3 py-2 bg-muted rounded-md text-sm">
+                                  <strong>Location Captured:</strong> {capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}
+                                  {address && <div className="text-green-600 mt-1">✓ Address populated</div>}
+                                  {!address && error && error.code === -1 && (
+                                    <div className="text-orange-600 mt-1">
+                                      ⚠️ Address conversion failed
+                                      <Button
+                                        type="button"
+                                        variant="link"
+                                        size="sm"
+                                        className="h-auto p-0 ml-2 text-orange-600 hover:text-orange-700"
+                                        onClick={handleCaptureLocation}
+                                      >
+                                        Try again
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Location Permission Help */}
+                            <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                              <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">📍 Smart Address Detection</p>
+                              <p>Your current location will be automatically converted to a complete address including street, city, province, and postal code.</p>
+                              <p className="mt-2 font-medium">Location Permission Required:</p>
+                              <ul className="list-disc list-inside mt-1 space-y-1">
+                                <li>Click "Allow" when your browser asks for location permission</li>
+                                <li>Click the lock/info icon in the address bar and allow location</li>
+                                <li>Check your browser settings for location permissions</li>
+                                <li>Try refreshing the page and clicking the button again</li>
+                              </ul>
+                              <p className="mt-2 text-xs font-medium">💡 Tip: If you accidentally clicked "Block", refresh the page to try again.</p>
+                              <p className="mt-1 text-xs text-green-700 dark:text-green-300">✅ If address conversion fails, coordinates are still saved - just manually enter your address details.</p>
+                              <p className="mt-1 text-xs">You can also manually enter coordinates below if needed.</p>
+                            </div>
+
+                            {/* Alternative: Manual Coordinate Entry */}
+                            <div className="space-y-3 border-t pt-4">
+                              <Label className="text-sm font-medium">Alternative: Enter Coordinates Manually</Label>
+                              <p className="text-xs text-muted-foreground">
+                                If "Use Current Location" doesn't work, you can enter coordinates manually from Google Maps or another GPS app.
+                              </p>
+
+                              {/* Quick Google Maps Link */}
+                              <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-md border border-green-200 dark:border-green-800">
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-xs font-medium text-green-800 dark:text-green-200">🚀 Quick Coordinate Finder</p>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/50 border-green-300 dark:border-green-700"
+                                    onClick={() => window.open('https://maps.google.com', '_blank')}
+                                  >
+                                    Open Google Maps
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-green-700 dark:text-green-300 mb-2">
+                                  Click the button above to open Google Maps in a new tab, then:
+                                </p>
+                                <ol className="text-xs text-green-700 dark:text-green-300 space-y-1 list-decimal list-inside">
+                                  <li>Find your location on the map</li>
+                                  <li>Right-click (or long-press on mobile) on the exact spot</li>
+                                  <li>Click "What's here?" or "Drop a pin"</li>
+                                  <li>The coordinates will appear at the bottom (e.g., 14.599512, 120.984222)</li>
+                                  <li>Copy both numbers and paste them below</li>
+                                </ol>
+                                <p className="text-xs text-green-800 dark:text-green-200 font-medium mt-2">
+                                  ✅ No need to leave this page - just copy the coordinates and paste them here!
+                                </p>
+                              </div>
+
+                              <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                                <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">📍 Alternative Methods:</p>
+                                <ol className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-decimal list-inside">
+                                  <li>Use GPS coordinates from another mapping app</li>
+                                  <li>Get coordinates from a GPS device</li>
+                                  <li>Use latitude/longitude from any location service</li>
+                                </ol>
+                                <p className="text-xs text-green-700 dark:text-green-300 mt-2">
+                                  ✅ The map and address fields will update automatically when you enter coordinates!
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Map for location selection */}
+                            {(capturedLocation || addressForm.watch("coordinates")) && (
+                              <div className="mt-4 relative">
+                                <div className="relative bg-background border rounded-lg overflow-hidden">
+                                  {/* Map Header with Close Button */}
+                                  <div className="flex items-center justify-between p-3 border-b bg-muted/50">
+                                    <div className="flex items-center space-x-2">
+                                      <MapPin className="h-4 w-4 text-primary" />
+                                      <span className="text-sm font-medium">Selected Location</span>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setCapturedLocation(null);
+                                        addressForm.setValue("coordinates", { lat: 0, lng: 0 });
+                                      }}
+                                      className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                                      data-testid="button-close-map"
+                                    >
+                                      <X className="h-4 w-4" />
+                                      <span className="sr-only">Close map</span>
+                                    </Button>
+                                  </div>
+                                  
+                                  {/* Map Container */}
+                                  <div className="relative">
+                                    <Map
+                                      center={mapCenter || capturedLocation || (addressForm.watch("coordinates") ? {
+                                        latitude: addressForm.watch("coordinates")?.lat || 0,
+                                        longitude: addressForm.watch("coordinates")?.lng || 0
+                                      } : undefined)}
+                                      markers={[
+                                        {
+                                          id: "selected-location",
+                                          position: capturedLocation || {
+                                            latitude: addressForm.watch("coordinates")?.lat || 0,
+                                            longitude: addressForm.watch("coordinates")?.lng || 0
+                                          },
+                                          title: "Selected Location",
+                                          type: "customer"
+                                        }
+                                      ]}
+                                      onLocationSelect={handleLocationSelect}
+                                      className="h-48"
+                                    />
+                                  </div>
+                                  
+                                  {/* Location Info Footer */}
+                                  <div className="p-3 border-t bg-muted/30">
+                                    <p className="text-xs text-muted-foreground">
+                                      📍 Coordinates: {(capturedLocation || addressForm.watch("coordinates")) ?
+                                        `${(capturedLocation?.latitude || addressForm.watch("coordinates")?.lat || 0).toFixed(6)}, ${(capturedLocation?.longitude || addressForm.watch("coordinates")?.lng || 0).toFixed(6)}` :
+                                        'No location selected'
+                                      }
+                                    </p>
+                                    {capturedLocation && (
+                                      <p className="text-xs text-green-600 mt-1">
+                                        ✅ Location captured and map updated
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="isDefault"
+                            checked={addressForm.watch("isDefault")}
+                            onCheckedChange={(checked) => addressForm.setValue("isDefault", checked)}
+                            data-testid="switch-default-address"
+                          />
+                          <Label htmlFor="isDefault">Set as default address</Label>
+                        </div>
+
+                        <div className="flex space-x-3">
+                          <Button
+                            type="submit"
+                            disabled={createAddressMutation.isPending || updateAddressMutation.isPending}
+                            data-testid="button-save-address"
+                          >
+                            {editingAddress ? "Update Address" : "Add Address"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleCancelAddressForm}
+                            data-testid="button-cancel-address"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+
+              {/* Addresses List */}
+              <div className="space-y-4">
+                {addressesLoading ? (
+                  <div className="space-y-4">
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <Card key={i}>
+                        <CardContent className="p-4">
+                          <div className="space-y-2">
+                            <div className="h-4 bg-muted rounded animate-pulse"></div>
+                            <div className="h-3 bg-muted rounded animate-pulse w-3/4"></div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : addresses.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="font-semibold mb-2">No addresses added</h3>
+                      <p className="text-muted-foreground">
+                        Add your delivery addresses to make ordering easier.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  addresses.map((address: Address) => (
+                    <Card key={address.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-3">
+                            <MapPin className="h-5 w-5 text-primary mt-0.5" />
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-medium" data-testid={`text-address-label-${address.id}`}>
+                                  {address.label}
+                                </h3>
+                                {address.isDefault && (
+                                  <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-muted-foreground text-sm" data-testid={`text-address-details-${address.id}`}>
+                                {address.street}
+                              </p>
+                              <p className="text-muted-foreground text-sm">
+                                {address.city}, {address.province} {address.zipCode}
+                              </p>
+                              {address.coordinates && (
+                                <div className="flex items-center space-x-1 mt-1">
+                                  <Navigation className="h-3 w-3 text-green-600" />
+                                  <span className="text-xs text-green-600 font-medium">
+                                    GPS Location Available
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditAddress(address)}
+                              data-testid={`button-edit-address-${address.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteAddressMutation.mutate(address.id)}
+                              className="text-destructive hover:text-destructive"
+                              data-testid={`button-delete-address-${address.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Notifications Tab */}
+          <TabsContent value="notifications">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Notifications
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {notifications.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="font-semibold mb-2">No notifications</h3>
+                      <p className="text-muted-foreground">
+                        You don't have any notifications at the moment.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {notifications.map((notification: any) => (
+                        <div
+                          key={notification.id}
+                          className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                            !notification.read ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800' : ''
+                          }`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium">{notification.title}</h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {notification.message}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  {new Date(notification.createdAt).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2 ml-4">
+                                {!notification.read && (
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteNotificationMutation.mutate(notification.id)}
+                                  disabled={deleteNotificationMutation.isPending}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Notification Preferences
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Order Updates</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Get notified about order status changes
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-order-notifications" />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Promotions</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Receive special offers and promotions
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-promo-notifications" />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Delivery Reminders</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Get reminded about scheduled deliveries
+                      </p>
+                    </div>
+                    <Switch defaultChecked data-testid="switch-delivery-notifications" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Security Tab */}
+          <TabsContent value="security">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Shield className="h-4 w-4 mr-2" />
+                    Security Settings
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label>Change Password</Label>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Update your password to keep your account secure
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsChangingPassword(true)}
+                      data-testid="button-change-password"
+                    >
+                      Change Password
+                    </Button>
+                  </div>
+
+                  {/* Password Change Form */}
+                  {isChangingPassword && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="border-t pt-4"
+                    >
+                      <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
+                        <div>
+                          <Label htmlFor="current-password">Current Password</Label>
+                          <div className="relative">
+                            <Input
+                              id="current-password"
+                              type={showCurrentPassword ? "text" : "password"}
+                              placeholder="Enter your current password"
+                              className="pr-12"
+                              {...passwordForm.register("currentPassword")}
+                              data-testid="input-current-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                              data-testid="button-toggle-current-password"
+                            >
+                              {showCurrentPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
+                          {passwordForm.formState.errors.currentPassword && (
+                            <p className="text-sm text-destructive">
+                              {passwordForm.formState.errors.currentPassword.message}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="new-password">New Password</Label>
+                          <div className="relative">
+                            <Input
+                              id="new-password"
+                              type={showNewPassword ? "text" : "password"}
+                              placeholder="Enter your new password"
+                              className="pr-12"
+                              {...passwordForm.register("newPassword")}
+                              data-testid="input-new-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              data-testid="button-toggle-new-password"
+                            >
+                              {showNewPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
+                          {passwordForm.formState.errors.newPassword && (
+                            <p className="text-sm text-destructive">
+                              {passwordForm.formState.errors.newPassword.message}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="confirm-password">Confirm New Password</Label>
+                          <div className="relative">
+                            <Input
+                              id="confirm-password"
+                              type={showConfirmPassword ? "text" : "password"}
+                              placeholder="Confirm your new password"
+                              className="pr-12"
+                              {...passwordForm.register("confirmPassword")}
+                              data-testid="input-confirm-password"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-10 w-10 hover:bg-transparent"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              data-testid="button-toggle-confirm-password"
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                              )}
+                            </Button>
+                          </div>
+                          {passwordForm.formState.errors.confirmPassword && (
+                            <p className="text-sm text-destructive">
+                              {passwordForm.formState.errors.confirmPassword.message}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex space-x-3">
+                          <Button
+                            type="submit"
+                            disabled={updatePasswordMutation?.isPending}
+                            data-testid="button-save-password"
+                          >
+                            {updatePasswordMutation?.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Update Password
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setIsChangingPassword(false);
+                              passwordForm.reset();
+                            }}
+                            data-testid="button-cancel-password-change"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  )}
+
+                  <div className="border-t pt-4">
+                    <Label>Two-Factor Authentication</Label>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Add an extra layer of security to your account
+                    </p>
+                    <Button variant="outline" disabled data-testid="button-enable-2fa">
+                      Enable 2FA
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-destructive">Sign Out</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Sign out of your account on this device
+                      </p>
+                    </div>
+                    <Button 
+                      variant="destructive" 
+                      onClick={logout}
+                      data-testid="button-signout"
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}

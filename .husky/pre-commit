@@ -1,0 +1,27 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Check for duplicate files
+echo "🔍 Checking for duplicate files..."
+
+# Find duplicate .js/.jsx files (excluding allowed ones)
+DUPLICATES=$(find . -name "*.js" -o -name "*.jsx" | grep -v node_modules | grep -v dist | grep -v ".config.js" | grep -v "postcss.config.js" | grep -v "eslint.config.js" | grep -v "tailwind.config.js")
+
+if [ ! -z "$DUPLICATES" ]; then
+    echo "❌ Error: Found duplicate JavaScript files:"
+    echo "$DUPLICATES"
+    echo ""
+    echo "🚫 This project uses TypeScript. Please use .ts/.tsx extensions instead."
+    echo "📝 Allowed JS files: vite.config.js, postcss.config.js, eslint.config.js, tailwind.config.js"
+    exit 1
+fi
+
+# Run TypeScript check
+echo "🔧 Running TypeScript check..."
+npm run check
+
+# Run linting
+echo "🧹 Running ESLint..."
+npm run lint
+
+echo "✅ Pre-commit checks passed!"
