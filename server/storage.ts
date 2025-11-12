@@ -306,7 +306,10 @@ export class DrizzleStorage implements IStorage {
     // Get product name for order number
     const product = await this.getProduct(order.productId);
     const productName = product ? product.name.substring(0, 3).toUpperCase() : 'UNK';
-    const orderNumber = `GF- ${productName}`;
+    // Generate unique order number with timestamp and random suffix
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+    const orderNumber = `GF-${productName}-${timestamp}-${randomSuffix}`;
     const result = await db.insert(orders).values({
       ...order,
       orderNumber,

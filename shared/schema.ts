@@ -79,8 +79,10 @@ export const orders = pgTable("orders", {
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
   status: text("status").default("pending").notNull(), // "pending" | "processing" | "out_for_delivery" | "delivered" | "cancelled"
-  paymentMethod: text("payment_method").notNull(), // "cod" | "gcash"
+  paymentMethod: text("payment_method").notNull(), // "cod" | "bank_transfer"
   paymentStatus: text("payment_status").default("pending").notNull(), // "pending" | "paid" | "failed"
+  referenceNumber: text("reference_number"), // For bank transfer payments
+  proofOfPayment: text("proof_of_payment"), // URL to uploaded proof of payment image
   notes: text("notes"),
   scheduledDate: timestamp("scheduled_date"),
   deliveredAt: timestamp("delivered_at"),
